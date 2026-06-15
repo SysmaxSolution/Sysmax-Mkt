@@ -1,0 +1,16 @@
+# deps
+node_modules/
+
+# next
+.next/
+out/
+
+# env (NUNCA versionar segredos)
+.env
+.env.local
+.env*.local
+
+# logs e temporarios
+*.log
+.DS_Store
+.vercel
