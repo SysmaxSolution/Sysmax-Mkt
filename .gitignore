@@ -10,6 +10,10 @@ out/
 .env.local
 .env*.local
 
+# typescript (gerados)
+*.tsbuildinfo
+next-env.d.ts
+
 # logs e temporarios
 *.log
 .DS_Store
