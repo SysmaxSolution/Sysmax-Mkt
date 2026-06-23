@@ -115,7 +115,13 @@ async function processInbound(params: {
 
   await insertMessage({ conversationId: conversation.id, direction: "outbound", content: result.reply, sentBy: "bot" });
 
-  if (result.handoff) await setConversationStatus(conversation.id, "human");
+  // Erros transitórios da API (Claude sem crédito ou instabilidade) NÃO transferem
+  // para humano — bot tenta novamente na próxima mensagem.
+  const isTransientError =
+    result.handoffReason === "anthropic_error" || result.handoffReason === "anthropic_no_credits";
+  if (result.handoff && !isTransientError) {
+    await setConversationStatus(conversation.id, "human");
+  }
 
   const ok = await safeSend(phone, result.reply);
   if (!ok) await setConversationStatus(conversation.id, "human");
