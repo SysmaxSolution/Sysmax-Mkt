@@ -5,6 +5,7 @@ import {
   findOrCreateLeadByPhone,
   getOrCreateConversation,
   getActiveConversationByPhone,
+  getConversationStatus,
   insertMessage,
   isRecentEcho,
   setConversationStatus,
@@ -112,6 +113,16 @@ async function processInbound(params: {
   if (conversation.status === "human") return;
 
   const result = await runSalesAgent({ lead, conversationId: conversation.id, userMessage: messageText });
+
+  // Re-checa o status ANTES de registrar/enviar: o agente pode levar vários
+  // segundos e, nesse intervalo, o consultor pode ter assumido a conversa
+  // pelo celular (fromMe → status 'human'). Se assumiu, o bot se cala — não
+  // registra nem envia, evitando atropelar o humano.
+  const latest = await getConversationStatus(conversation.id);
+  if (latest === "human") {
+    console.log("[sales-webhook] humano assumiu durante o processamento — resposta do bot descartada");
+    return;
+  }
 
   await insertMessage({ conversationId: conversation.id, direction: "outbound", content: result.reply, sentBy: "bot" });
 

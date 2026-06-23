@@ -120,21 +120,58 @@ export async function insertMessage(params: {
   await salesDb.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", params.conversationId);
 }
 
-// Verifica se o bot enviou algo nos últimos 30s nessa conversa.
-// Checa sent_by='bot' em vez de conteúdo exato — o WhatsApp pode alterar
-// encoding de \n e emoji no evento fromMe devolvido pela Evolution.
-export async function isRecentEcho(conversationId: string, _content: string): Promise<boolean> {
-  const since = new Date(Date.now() - 30_000).toISOString();
+// Normaliza texto para comparação de eco: unicode NFKC, remove TODO
+// whitespace e baixa caixa. Tolera as variações de encoding que o
+// WhatsApp aplica em \n e emoji no evento fromMe devolvido pela Evolution.
+function normalizeForEcho(text: string): string {
+  return text.normalize("NFKC").replace(/\s+/g, "").toLowerCase();
+}
+
+// Decide se uma mensagem fromMe é ECO de algo que o BOT enviou (e não
+// uma intervenção humana). Compara CONTEÚDO — não basta o bot ter mandado
+// algo recentemente. Mensagens do bot são longas; o eco pode voltar
+// truncado/reencodado, então casamos por prefixo a partir de 16 chars.
+function isEchoMatch(botText: string, incoming: string): boolean {
+  const a = normalizeForEcho(botText);
+  const b = normalizeForEcho(incoming);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const head = Math.min(a.length, b.length, 40);
+  return head >= 16 && a.slice(0, head) === b.slice(0, head);
+}
+
+// Verifica se a mensagem fromMe corresponde a uma mensagem que o BOT
+// enviou nos últimos 90s. Como comparamos conteúdo, uma resposta humana
+// digitada logo após o bot (texto diferente) NÃO é tratada como eco e
+// dispara corretamente o handoff — esse era o furo que deixava o bot
+// atropelar o consultor.
+export async function isRecentEcho(conversationId: string, content: string): Promise<boolean> {
+  if (!content?.trim()) return false;
+  const since = new Date(Date.now() - 90_000).toISOString();
   const { data } = await salesDb
     .from("messages")
-    .select("id")
+    .select("content")
     .eq("conversation_id", conversationId)
     .eq("direction", "outbound")
     .eq("sent_by", "bot")
     .gte("created_at", since)
-    .limit(1)
+    .order("created_at", { ascending: false })
+    .limit(5);
+  if (!data?.length) return false;
+  return data.some((m) => isEchoMatch((m as { content: string }).content, content));
+}
+
+// Status atual da conversa — usado para re-checar handoff logo antes de o
+// bot enviar (o humano pode ter assumido durante o processamento do agente).
+export async function getConversationStatus(
+  conversationId: string,
+): Promise<Conversation["status"] | null> {
+  const { data } = await salesDb
+    .from("conversations")
+    .select("status")
+    .eq("id", conversationId)
     .maybeSingle();
-  return !!data;
+  return (data?.status as Conversation["status"] | undefined) ?? null;
 }
 
 export async function getRecentHistory(
