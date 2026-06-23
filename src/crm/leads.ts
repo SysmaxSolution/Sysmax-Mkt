@@ -120,15 +120,17 @@ export async function insertMessage(params: {
   await salesDb.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", params.conversationId);
 }
 
-// Verifica se um texto outbound idêntico foi gravado nos últimos 60s (dedup de eco).
-export async function isRecentEcho(conversationId: string, content: string): Promise<boolean> {
-  const since = new Date(Date.now() - 60_000).toISOString();
+// Verifica se o bot enviou algo nos últimos 30s nessa conversa.
+// Checa sent_by='bot' em vez de conteúdo exato — o WhatsApp pode alterar
+// encoding de \n e emoji no evento fromMe devolvido pela Evolution.
+export async function isRecentEcho(conversationId: string, _content: string): Promise<boolean> {
+  const since = new Date(Date.now() - 30_000).toISOString();
   const { data } = await salesDb
     .from("messages")
     .select("id")
     .eq("conversation_id", conversationId)
     .eq("direction", "outbound")
-    .eq("content", content)
+    .eq("sent_by", "bot")
     .gte("created_at", since)
     .limit(1)
     .maybeSingle();
