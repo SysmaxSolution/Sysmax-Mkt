@@ -30,7 +30,7 @@ centavo, importação de NF-e (XML) para estoque.
 CONFIANÇA: multi-tenant com dados isolados por clínica (RLS), cloud + app mobile, independente
 (não pertence a grupo que concorra com a clínica).
 
-PLANOS: Free / Premium R$ 99 / Enterprise R$ 299 / Specialized — abaixo do líder de mercado (R$ 157+).
+PLANOS: Free / Premium R$ 359,90/mês / Enterprise R$ 1.299/mês — abaixo do líder de mercado (R$ 157+ por módulo).
 OFERTA: teste grátis, sem cartão e sem fidelidade, com migração de dados assistida (até 48h).`;
 
 // Persona/diretrizes do agente comercial B2B.

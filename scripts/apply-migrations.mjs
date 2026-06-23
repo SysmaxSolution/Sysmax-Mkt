@@ -16,17 +16,25 @@ import { dirname, join } from "node:path";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(__dirname, "..", "supabase", "migrations");
 
-// Carrega .env manualmente (sem dependencia extra).
-async function loadEnv() {
+// Carrega .env e depois .env.local (mesma prioridade do Next.js: local sobrescreve).
+async function loadEnvFile(filePath, overwrite = false) {
   try {
-    const env = await readFile(join(__dirname, "..", ".env"), "utf8");
+    const env = await readFile(filePath, "utf8");
     for (const line of env.split("\n")) {
       const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-      if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^['"]|['"]$/g, "");
+      if (m && (overwrite || !process.env[m[1]])) {
+        process.env[m[1]] = m[2].replace(/^['"]|['"]$/g, "");
+      }
     }
   } catch {
-    /* .env opcional se variaveis ja estiverem no ambiente */
+    /* arquivo opcional */
   }
+}
+
+async function loadEnv() {
+  const root = join(__dirname, "..");
+  await loadEnvFile(join(root, ".env"), false);
+  await loadEnvFile(join(root, ".env.local"), true); // .env.local tem prioridade
 }
 
 async function main() {
