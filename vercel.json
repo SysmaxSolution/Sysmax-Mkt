@@ -1,10 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
-    { "path": "/api/cron/lead-followups", "schedule": "0 11 * * 1-5" },
-    { "path": "/api/cron/outbox-send", "schedule": "0 13,16,19 * * 1-5" },
-    { "path": "/api/cron/content-pipeline", "schedule": "0 10 * * *" },
-    { "path": "/api/cron/metrics-rollup", "schedule": "0 3 * * *" }
+    { "path": "/api/cron/daily-am", "schedule": "0 11 * * *" },
+    { "path": "/api/cron/daily-pm", "schedule": "0 20 * * *" }
   ]
 }
 
