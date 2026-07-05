@@ -32,6 +32,8 @@ Já existentes: `SALES_SUPABASE_URL`, `SALES_SUPABASE_SERVICE_KEY`, `ANTHROPIC_A
 | `UNSUBSCRIBE_SECRET` | segredo p/ assinar o link (se ausente, usa `ADMIN_TOKEN`) |
 | `WARMUP_START_DATE` | data ISO de início do aquecimento (rampa 20→40/dia) |
 | `FOUNDER_WHATSAPP_PHONE` | número do fundador p/ receber o digest diário (E.164) |
+| `DIGEST_EMAIL` | e-mail p/ receber o digest diário (fallback: `MAIL_REPLY_TO`) |
+| `REVIEW_WHATSAPP_PHONE` | número PESSOAL do fundador (diferente do bot) p/ o preview diário da fila; a aprovação segue no painel |
 | `KILLSCALE_START_DATE` | início da janela de 60 dias do placar |
 
 Opcionais (têm default): `OUTBOX_BUILD_CAP=30`, `WARMUP_MIN=20`, `WARMUP_MAX=40`, `WARMUP_STEP=5`, `WA_DAILY_CAP=15`, `OUTBOX_SEND_BATCH=25`, `WA_MIN_SEND_INTERVAL_MS=1500`, `KILLSCALE_GOAL=3`, `KILLSCALE_DAYS=60`.

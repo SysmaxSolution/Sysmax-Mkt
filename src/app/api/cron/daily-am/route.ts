@@ -3,6 +3,7 @@ import { isAuthorizedCron } from "@/lib/cron-auth";
 import { GET as leadFollowups } from "@/app/api/cron/lead-followups/route";
 import { GET as worklistBuild } from "@/app/api/cron/worklist-build/route";
 import { GET as contentPipeline } from "@/app/api/cron/content-pipeline/route";
+import { GET as reviewPush } from "@/app/api/cron/review-push/route";
 
 // ===========================================================================
 // Orquestrador da MANHÃ (1 cron/dia — compatível com o plano Hobby do Vercel).
@@ -20,6 +21,8 @@ export async function GET(req: NextRequest) {
   const drafts = await leadFollowups(req).then((r) => r.json()).catch((e) => ({ ok: false, error: String(e) }));
   const worklist = await worklistBuild(req).then((r) => r.json()).catch((e) => ({ ok: false, error: String(e) }));
   const content = await contentPipeline(req).then((r) => r.json()).catch((e) => ({ ok: false, error: String(e) }));
+  // Preview no WhatsApp pessoal do fundador, DEPOIS de a fila estar montada.
+  const review = await reviewPush(req).then((r) => r.json()).catch((e) => ({ ok: false, error: String(e) }));
 
-  return NextResponse.json({ ok: true, stage: "daily-am", drafts, worklist, content });
+  return NextResponse.json({ ok: true, stage: "daily-am", drafts, worklist, content, review });
 }
