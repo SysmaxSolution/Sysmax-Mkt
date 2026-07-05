@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isAuthorizedCron } from "@/lib/cron-auth";
 import { salesDb } from "@/lib/supabase";
 import { sendText } from "@/lib/evolution";
+import { sendInternalEmail } from "@/lib/mailer";
 
 // ===========================================================================
 // Consolida o funil do dia em metrics_daily e monta o placar kill/scale:
@@ -69,17 +70,23 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // --- Digest ao fundador (canal interno/warm) ---
-  const founder = process.env.FOUNDER_WHATSAPP_PHONE;
+  // --- Digest ao fundador ---
   const digest = `Sysmax · funil ${date}
 Prospects descobertos: ${prospects}
 E-mails enviados: ${emailsSent}
 Demos agendadas: ${demosScheduled}
 Novos clientes (cheio): ${payingFull}${scoreboard}`;
-  let digestSent = false;
+
+  // E-mail é o canal confiável (o WhatsApp da instância não envia p/ si mesmo).
+  let emailDigest = false, waDigest = false;
+  const digestEmail = process.env.DIGEST_EMAIL ?? process.env.MAIL_REPLY_TO;
+  if (digestEmail) {
+    try { await sendInternalEmail({ to: digestEmail, subject: `Sysmax · funil ${date}`, text: digest }); emailDigest = true; } catch { /* não bloqueia */ }
+  }
+  const founder = process.env.FOUNDER_WHATSAPP_PHONE;
   if (founder) {
-    try { await sendText(founder, digest); digestSent = true; } catch { /* não bloqueia o rollup */ }
+    try { await sendText(founder, digest); waDigest = true; } catch { /* não bloqueia */ }
   }
 
-  return NextResponse.json({ ok: true, date, prospects, emailsSent, demosScheduled, payingFull, digestSent });
+  return NextResponse.json({ ok: true, date, prospects, emailsSent, demosScheduled, payingFull, emailDigest, waDigest });
 }

@@ -98,3 +98,19 @@ Se não quiser mais receber, cancele aqui: ${unsubUrl}`;
   const data = (await res.json().catch(() => ({}))) as { id?: string };
   return { skipped: false, id: data.id ?? "" };
 }
+
+// E-mail INTERNO (digest ao fundador). Não é cold outreach: sem footer de
+// unsubscribe, sem checagem de suppression. Usa o mesmo remetente (MAIL_FROM).
+export async function sendInternalEmail(args: { to: string; subject: string; text: string }): Promise<string> {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.MAIL_FROM;
+  if (!apiKey || !from) throw new Error("RESEND_API_KEY e MAIL_FROM são obrigatórios.");
+  const res = await fetch(RESEND_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({ from, to: [args.to], subject: args.subject, text: args.text }),
+  });
+  if (!res.ok) throw new Error(`Resend ${res.status}: ${await res.text().catch(() => "")}`);
+  const data = (await res.json().catch(() => ({}))) as { id?: string };
+  return data.id ?? "";
+}
