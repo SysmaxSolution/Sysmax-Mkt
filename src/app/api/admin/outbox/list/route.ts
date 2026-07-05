@@ -9,10 +9,16 @@ export const runtime = "nodejs";
 export async function GET(req: NextRequest) {
   if (!isAuthorizedAdmin(req)) return new NextResponse("unauthorized", { status: 401 });
 
+  // kind=auto -> disparos automáticos (email/whatsapp) da tela /admin/outbox
+  // kind=manual -> worklist humana (call/ig_dm) da tela /admin/worklist
+  const kind = new URL(req.url).searchParams.get("kind") === "manual" ? "manual" : "auto";
+  const channels = kind === "manual" ? ["call", "ig_dm"] : ["email", "whatsapp"];
+
   const { data, error } = await salesDb
     .from("outbox")
-    .select("id,channel,subject,body,status,created_at,scheduled_for,lead:leads(company_name,name,city,uf,email,phone)")
+    .select("id,channel,subject,body,status,created_at,scheduled_for,lead:leads(company_name,name,city,uf,email,phone,instagram_handle)")
     .in("status", ["draft", "approved"])
+    .in("channel", channels)
     .order("created_at", { ascending: true })
     .limit(200);
 

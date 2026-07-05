@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAuthorizedCron } from "@/lib/cron-auth";
 import { GET as leadFollowups } from "@/app/api/cron/lead-followups/route";
+import { GET as worklistBuild } from "@/app/api/cron/worklist-build/route";
 import { GET as contentPipeline } from "@/app/api/cron/content-pipeline/route";
 
 // ===========================================================================
@@ -17,7 +18,8 @@ export async function GET(req: NextRequest) {
   if (!isAuthorizedCron(req)) return new NextResponse("unauthorized", { status: 401 });
 
   const drafts = await leadFollowups(req).then((r) => r.json()).catch((e) => ({ ok: false, error: String(e) }));
+  const worklist = await worklistBuild(req).then((r) => r.json()).catch((e) => ({ ok: false, error: String(e) }));
   const content = await contentPipeline(req).then((r) => r.json()).catch((e) => ({ ok: false, error: String(e) }));
 
-  return NextResponse.json({ ok: true, stage: "daily-am", drafts, content });
+  return NextResponse.json({ ok: true, stage: "daily-am", drafts, worklist, content });
 }

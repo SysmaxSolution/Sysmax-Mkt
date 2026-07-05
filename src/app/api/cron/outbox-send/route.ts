@@ -66,6 +66,7 @@ export async function GET(req: NextRequest) {
     .from("outbox")
     .select("id,channel,subject,body,lead_id,lead:leads(email,phone,opted_out)")
     .eq("status", "approved")
+    .in("channel", ["email", "whatsapp"]) // canais automáticos; call/ig_dm são worklist manual
     .lte("scheduled_for", new Date().toISOString())
     .order("scheduled_for", { ascending: true })
     .limit(SEND_BATCH * 2);

@@ -87,44 +87,68 @@ async function searchPlaces(apiKey, query, limit) {
 }
 
 const EMAIL_RE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
+const MAILTO_RE = /mailto:([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})/gi;
 const IG_RE = /instagram\.com\/([a-z0-9._]{2,30})/i;
-const BAD_EMAIL = /(sentry|wixpress|example\.com|\.png|\.jpg|\.gif|@sentry|godaddy|domain)/i;
+const BAD_EMAIL = /(sentry|wixpress|example\.com|\.png|\.jpe?g|\.gif|\.webp|@sentry|godaddy|domain\.com|wix\.com|squarespace|cloudflare|sentry\.io|\.svg)/i;
+const CONTACT_PATHS = ["", "/contato", "/contato/", "/fale-conosco", "/fale-conosco/", "/sobre", "/quem-somos", "/contato-2"];
+
+async function fetchText(url) {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+    const res = await fetch(url, { signal: ctrl.signal, redirect: "follow" });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    return await res.text();
+  } catch {
+    return null;
+  }
+}
+
+function pickEmails(html, host) {
+  // mailto: tem prioridade (alta precisão), depois texto plano.
+  const mailtos = [...html.matchAll(MAILTO_RE)].map((m) => m[1]);
+  const plain = html.match(EMAIL_RE) ?? [];
+  const all = [...mailtos, ...plain].map((e) => e.toLowerCase()).filter((e) => !BAD_EMAIL.test(e));
+  if (!all.length) return null;
+  return all.find((e) => host && e.endsWith(host)) ?? all[0];
+}
 
 async function enrichFromWebsite(website) {
   const result = { email: null, instagram: null };
   if (!website) return result;
-  const urls = [website];
-  try {
-    const u = new URL(website);
-    urls.push(`${u.origin}/contato`, `${u.origin}/contato.html`);
-  } catch {
-    /* url inválida */
-  }
-  for (const url of urls) {
-    try {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 8000);
-      const res = await fetch(url, { signal: ctrl.signal, redirect: "follow" });
-      clearTimeout(timer);
-      if (!res.ok) continue;
-      const html = await res.text();
-      if (!result.instagram) {
-        const ig = html.match(IG_RE);
-        if (ig && !/\/(p|reel|explore|accounts)\b/i.test(ig[1])) result.instagram = ig[1];
-      }
-      if (!result.email) {
-        const emails = (html.match(EMAIL_RE) ?? []).filter((e) => !BAD_EMAIL.test(e));
-        if (emails.length) {
-          // preferir e-mail do mesmo domínio do site
-          let host = "";
-          try { host = new URL(website).hostname.replace(/^www\./, ""); } catch { /* */ }
-          result.email = emails.find((e) => host && e.toLowerCase().endsWith(host.toLowerCase())) ?? emails[0];
-        }
-      }
-      if (result.email) break;
-    } catch {
-      /* segue p/ próxima url */
+  let origin = "", host = "";
+  try { const u = new URL(website); origin = u.origin; host = u.hostname.replace(/^www\./, "").toLowerCase(); } catch { return result; }
+
+  // candidatos = caminhos padrão de contato + links "contato/fale-conosco" achados na home.
+  const candidates = CONTACT_PATHS.map((p) => origin + p);
+  const home = await fetchText(website);
+  if (home) {
+    if (!result.instagram) {
+      const ig = home.match(IG_RE);
+      if (ig && !/^(p|reel|explore|accounts|stories)$/i.test(ig[1])) result.instagram = ig[1];
     }
+    const email = pickEmails(home, host);
+    if (email) { result.email = email; return result; }
+    // segue links de contato não-padrão
+    for (const m of home.matchAll(/href=["']([^"']*(?:contato|fale-conosco|contact)[^"']*)["']/gi)) {
+      try { candidates.push(new URL(m[1], origin).href); } catch { /* */ }
+      if (candidates.length > 10) break;
+    }
+  }
+
+  const seen = new Set([website]);
+  for (const url of candidates) {
+    if (seen.has(url)) continue;
+    seen.add(url);
+    const html = await fetchText(url);
+    if (!html) continue;
+    if (!result.instagram) {
+      const ig = html.match(IG_RE);
+      if (ig && !/^(p|reel|explore|accounts|stories)$/i.test(ig[1])) result.instagram = ig[1];
+    }
+    const email = pickEmails(html, host);
+    if (email) { result.email = email; break; }
   }
   return result;
 }
