@@ -17,6 +17,18 @@ function headers(apiKey: string): Record<string, string> {
   return { "Content-Type": "application/json", apikey: apiKey };
 }
 
+// Throttle simples entre envios dentro da mesma invocação (evita rajadas que
+// disparam anti-spam do WhatsApp). Guardrail do council: WhatsApp só warm e
+// nunca em rajada. Ajustável via WA_MIN_SEND_INTERVAL_MS (default 1500ms).
+let _lastSendAt = 0;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+async function throttle(): Promise<void> {
+  const minInterval = parseInt(process.env.WA_MIN_SEND_INTERVAL_MS ?? "1500", 10);
+  const wait = _lastSendAt + minInterval - Date.now();
+  if (wait > 0) await sleep(wait);
+  _lastSendAt = Date.now();
+}
+
 function formatPhone(raw: string): string {
   if (raw.includes("@")) return raw;
   const digits = raw.replace(/\D/g, "");
@@ -32,6 +44,7 @@ function normalizeWhatsAppMarkdown(text: string): string {
 }
 
 export async function sendText(phone: string, message: string): Promise<void> {
+  await throttle();
   const c = creds();
   const url = `${c.apiUrl}/message/sendText/${c.instanceId}`;
   const body = JSON.stringify({ number: formatPhone(phone), text: normalizeWhatsAppMarkdown(message) });
