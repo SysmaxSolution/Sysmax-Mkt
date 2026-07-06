@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAuthorizedAdmin } from "@/lib/admin-auth";
+import { isAuthorizedViewer } from "@/lib/viewer-auth";
 import { salesDb } from "@/lib/supabase";
 
 // Ação de aprovação sobre itens do outbox. Aceita edição de subject/body no ato
 // da aprovação. approve => status 'approved' (fica elegível ao worker de envio,
-// que ainda respeita o warm-up). reject => 'rejected'. Protegido por x-admin-token.
+// que ainda respeita o warm-up). reject => 'rejected'. done => item da worklist
+// executado à mão.
+// AUTORIZAÇÃO: 'approve' exige ADMIN_TOKEN (autoriza disparo). 'done'/'reject'
+// aceitam o VIEWER_TOKEN — a equipe comercial trabalha a worklist sem poder
+// aprovar envios automáticos.
 export const runtime = "nodejs";
 
 type Body = {
@@ -17,11 +22,12 @@ type Body = {
 };
 
 export async function POST(req: NextRequest) {
-  if (!isAuthorizedAdmin(req)) return new NextResponse("unauthorized", { status: 401 });
-
   const payload = (await req.json().catch(() => null)) as Body | null;
   const valid = payload && ["approve", "reject", "done"].includes(payload.action);
   if (!valid) return NextResponse.json({ ok: false, error: "payload inválido" }, { status: 400 });
+
+  const authed = payload!.action === "approve" ? isAuthorizedAdmin(req) : isAuthorizedViewer(req);
+  if (!authed) return new NextResponse("unauthorized", { status: 401 });
   const ids = payload!.ids ?? (payload!.id ? [payload!.id] : []);
   if (!ids.length) return NextResponse.json({ ok: false, error: "nenhum id" }, { status: 400 });
 
