@@ -3,6 +3,7 @@ import { isAuthorizedCron } from "@/lib/cron-auth";
 import { salesDb } from "@/lib/supabase";
 import { createMessageWithFallback, SALES_MODEL } from "@/lib/anthropic";
 import { BRAND, PRODUCT_INFO } from "@/lib/brand";
+import { getActiveBrief } from "@/app/api/painel/brief/route";
 
 // ===========================================================================
 // Geração de conteúdo diário EM LOTE para a aba de Posts do painel: 5 posts +
@@ -53,6 +54,12 @@ function extractText(msg: { content: Array<{ type: string; text?: string }> }): 
 export async function GET(req: NextRequest) {
   if (!isAuthorizedCron(req)) return new NextResponse("unauthorized", { status: 401 });
 
+  // Direção da equipe (briefing definido no painel) tem prioridade sobre o padrão.
+  const brief = await getActiveBrief().catch(() => "");
+  const userMsg = brief
+    ? `DIREÇÃO DA EQUIPE PARA ESTE LOTE (siga à risca; é o contexto principal):\n"""${brief}"""\n\nGere o lote de hoje (5 posts + 2 vídeos + 1 anúncio) seguindo essa direção, sem inventar dados fora da base de conhecimento.`
+    : "Gere o lote de conteúdo de hoje (5 posts + 2 vídeos + 1 anúncio).";
+
   let batch: Batch | null = null;
   try {
     const msg = await createMessageWithFallback({
@@ -60,7 +67,7 @@ export async function GET(req: NextRequest) {
       max_tokens: 3200,
       temperature: 0.85,
       system: SYSTEM,
-      messages: [{ role: "user", content: "Gere o lote de conteúdo de hoje (5 posts + 2 vídeos + 1 anúncio)." }],
+      messages: [{ role: "user", content: userMsg }],
     });
     const raw = extractText(msg);
     const json = raw.startsWith("{") ? raw : (raw.match(/\{[\s\S]*\}/)?.[0] ?? "");

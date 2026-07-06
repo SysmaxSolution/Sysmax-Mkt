@@ -265,18 +265,60 @@ function PostsView({ token }: { token: string }) {
   const [data, setData] = useState<{ date: string | null; posts: CItem[]; videos: CItem[]; ad: CItem | null } | null>(null);
   const [st, setSt] = useState<"loading" | "ok" | "empty" | "error">("loading");
   const [copied, setCopied] = useState<string | null>(null);
+  const [brief, setBrief] = useState("");
+  const [briefUpdatedAt, setBriefUpdatedAt] = useState<string | null>(null);
+  const [briefState, setBriefState] = useState<"idle" | "saving" | "saved">("idle");
 
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch("/api/painel/content/today", { headers: { "x-admin-token": token } });
-        if (!res.ok) { setSt("error"); return; }
-        const j = await res.json();
+        const [cRes, bRes] = await Promise.all([
+          fetch("/api/painel/content/today", { headers: { "x-admin-token": token } }),
+          fetch("/api/painel/brief", { headers: { "x-admin-token": token } }),
+        ]);
+        if (bRes.ok) { const b = await bRes.json(); setBrief(b.brief ?? ""); setBriefUpdatedAt(b.updatedAt ?? null); }
+        if (!cRes.ok) { setSt("error"); return; }
+        const j = await cRes.json();
         if (!j.ok || (!j.posts?.length && !j.videos?.length && !j.ad)) { setSt("empty"); return; }
         setData(j); setSt("ok");
       } catch { setSt("error"); }
     })();
   }, [token]);
+
+  async function saveBrief() {
+    setBriefState("saving");
+    try {
+      const res = await fetch("/api/painel/brief", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-token": token },
+        body: JSON.stringify({ brief }),
+      });
+      if (!res.ok) throw new Error();
+      setBriefState("saved");
+      setBriefUpdatedAt(new Date().toISOString());
+      setTimeout(() => setBriefState("idle"), 1800);
+    } catch { setBriefState("idle"); }
+  }
+
+  const briefBox = (
+    <div className="briefbox">
+      <div className="brieftop">
+        <div>
+          <div className="brieflbl">Briefing para a próxima geração</div>
+          <div className="briefhint">O gerador diário segue este contexto ao criar os próximos posts, vídeos e anúncio. Ex.: tema da semana, campanha, público, tom, o que destacar/evitar.</div>
+        </div>
+        {briefUpdatedAt && <span className="briefwhen">salvo {new Date(briefUpdatedAt).toLocaleDateString("pt-BR")}</span>}
+      </div>
+      <textarea className="briefta" value={brief} maxLength={4000} rows={4}
+        placeholder="Ex.: Semana focada em clínicas 24h. Destaque o prontuário por voz nos plantões e a promoção do Starter. Tom acolhedor. Evite falar de preço no primeiro post."
+        onChange={(e) => setBrief(e.target.value)} />
+      <div className="briefactions">
+        <button className={`allbtn active${briefState === "saved" ? " ok" : ""}`} onClick={saveBrief} disabled={briefState === "saving"}>
+          {briefState === "saving" ? "Salvando…" : briefState === "saved" ? "Salvo ✓" : "Salvar briefing"}
+        </button>
+      </div>
+    </div>
+  );
 
   async function copy(id: string, text: string) {
     try { await navigator.clipboard.writeText(text); } catch { /* */ }
@@ -290,7 +332,8 @@ function PostsView({ token }: { token: string }) {
   if (st === "empty") return (
     <div style={{ marginTop: 24 }}>
       <header className="top"><div className="eyebrow">Sysmax Software · Conteúdo</div><h1>Posts do dia</h1></header>
-      <p className="notemsg">O lote de hoje ainda não foi gerado. Ele é criado automaticamente toda manhã — volte mais tarde.</p>
+      <p className="notemsg">O lote de hoje ainda não foi gerado. Ele é criado automaticamente toda manhã — defina abaixo a direção que o gerador deve seguir.</p>
+      {briefBox}
     </div>
   );
 
@@ -300,8 +343,10 @@ function PostsView({ token }: { token: string }) {
       <header className="top">
         <div className="eyebrow">Sysmax Software · Conteúdo</div>
         <h1>Posts do dia</h1>
-        <p className="sub">5 posts, 2 vídeos e 1 anúncio prontos para {d.date ?? "hoje"}. Baixe a arte, copie a legenda e publique no Instagram, status do WhatsApp e Facebook. Os roteiros de vídeo são para a equipe gravar/editar.</p>
+        <p className="sub">5 posts, 2 vídeos e 1 anúncio prontos para {d.date ?? "hoje"}. Baixe a arte/vídeo, copie a legenda e publique no Instagram, status do WhatsApp e Facebook.</p>
       </header>
+
+      {briefBox}
 
       <h2 className="secttl">Posts ({d.posts.length})</h2>
       <div className="grid">
@@ -482,5 +527,15 @@ const CSS = `
   .pactions{display:flex;gap:8px;flex-wrap:wrap;margin-top:2px}
   .dl{font-size:12.5px;font-weight:650;text-decoration:none;background:var(--accent);color:#fff;border:1px solid var(--accent);padding:5px 14px;border-radius:7px}
   .dl:hover{background:var(--accent-ink)}
+  .briefbox{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:14px;padding:16px 18px;margin:18px 0 6px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:10px}
+  .brieftop{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+  .brieflbl{font-size:14.5px;font-weight:750;letter-spacing:-.01em}
+  .briefhint{font-size:12.5px;color:var(--muted);max-width:70ch;margin-top:2px}
+  .briefwhen{font-size:11.5px;color:var(--muted);white-space:nowrap;font-weight:600}
+  .briefta{width:100%;resize:vertical;min-height:90px;padding:11px 13px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);color:var(--ink);font-family:inherit;font-size:13.5px;line-height:1.5}
+  .briefta:focus{outline:2px solid var(--accent);outline-offset:1px}
+  .briefactions{display:flex;justify-content:flex-end}
+  .allbtn.ok{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .allbtn:disabled{opacity:.6;cursor:default}
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 `;
