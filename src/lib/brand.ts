@@ -32,7 +32,7 @@ CONFIANÇA: multi-tenant com dados isolados por clínica (RLS), cloud + app mobi
 
 PLANOS (a partir de jun/2026):
 - Free: 2 usuários simultâneos, recepção + triagem + prontuário básico. Sem NFS-e, sem WhatsApp IA.
-- Starter: R$ 189/mês — prontuário por voz IA, recepção, triagem, MV, farmácia, WhatsApp IA, caixa/PDV, até 5 usuários. NFS-e disponível como add-on de +R$ 49/mês (até 30 notas/mês).
+- Starter: R$ 149,90/mês (promoção de lançamento, de R$ 189) — prontuário por voz IA, recepção, triagem, MV, farmácia, WhatsApp IA, caixa/PDV, até 5 usuários. NFS-e disponível como add-on de +R$ 49/mês (até 30 notas/mês).
 - Premium: R$ 359,90/mês — tudo do Starter + internação, centro cirúrgico, conciliação Petlove, NFS-e ilimitada inclusa, usuários ilimitados.
 - Enterprise: R$ 1.299/mês — multi-unidade, SLA prioritário, integração customizada.
 Abaixo do líder de mercado (R$ 157+ por módulo isolado).
