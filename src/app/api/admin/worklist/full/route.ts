@@ -20,7 +20,7 @@ const CH_LABEL: Record<string, string> = { email: "E-mail", whatsapp: "WhatsApp"
 type Lead = {
   id: string; name: string | null; company_name: string | null; city: string | null; uf: string | null;
   phone: string | null; email: string | null; instagram_handle: string | null; website: string | null;
-  enrichment_status: string | null;
+  enrichment_status: string | null; stage: string | null;
 };
 type Ob = { id: string; lead_id: string; channel: string; subject: string | null; body: string; status: string };
 
@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
   if (!isAuthorizedViewer(req)) return new NextResponse("unauthorized", { status: 401 });
 
   const [{ data: leads, error: le }, { data: outbox, error: oe }] = await Promise.all([
-    salesDb.from("leads").select("id,name,company_name,city,uf,phone,email,instagram_handle,website,enrichment_status").eq("source", "places"),
+    salesDb.from("leads").select("id,name,company_name,city,uf,phone,email,instagram_handle,website,enrichment_status,stage").eq("source", "places"),
     salesDb.from("outbox").select("id,lead_id,channel,subject,body,status").in("status", ["draft", "approved"]).order("created_at", { ascending: false }).limit(2000),
   ]);
   if (le || oe) return NextResponse.json({ ok: false, error: (le ?? oe)?.message }, { status: 500 });
@@ -71,6 +71,8 @@ export async function GET(req: NextRequest) {
     }
 
     rows.push({
+      leadId: l.id,
+      stage: l.stage ?? "new",
       clinic: l.company_name ?? l.name ?? "(sem nome)",
       city: l.city, uf: l.uf,
       phone: l.phone ?? null,

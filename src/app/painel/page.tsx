@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 type Msg = { id: string; channel: string; channelLabel: string; subject: string | null; body: string; status: string };
 type Row = {
+  leadId: string; stage: string;
   clinic: string; city: string | null; uf: string | null;
   phone: string | null; email: string | null; instagram: string | null; website: string | null;
   recommended: string; recommendedReason: string; messages: Msg[];
@@ -22,6 +23,17 @@ const REC: Record<string, { label: string; key: string }> = {
   whatsapp_manual: { label: "WhatsApp", key: "wa" },
   call: { label: "Ligação", key: "call" },
 };
+
+// Estágios do funil (leads.stage) na linguagem do analista comercial.
+const STAGES: { key: string; label: string; short: string }[] = [
+  { key: "new", label: "A contatar", short: "A contatar" },
+  { key: "engaged", label: "Contatado", short: "Contatado" },
+  { key: "qualified", label: "Respondeu", short: "Respondeu" },
+  { key: "demo", label: "Demo agendada", short: "Demo" },
+  { key: "won", label: "Virou cliente", short: "Cliente" },
+  { key: "lost", label: "Perdido", short: "Perdido" },
+];
+const STAGE_LABEL: Record<string, string> = Object.fromEntries(STAGES.map((s) => [s.key, s.short]));
 
 function phoneDisplay(p: string | null): string | null {
   if (!p) return null;
@@ -40,6 +52,7 @@ export default function PainelPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({ email: 0, ig: 0, wa: 0, call: 0 });
   const [filter, setFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [q, setQ] = useState("");
   const [state, setState] = useState<"idle" | "loading" | "authed" | "error">("idle");
   const [note, setNote] = useState("");
@@ -71,29 +84,39 @@ export default function PainelPage() {
     setCopied(id); setTimeout(() => setCopied((c) => (c === id ? null : c)), 1400);
   }
 
-  async function act(action: "done" | "reject", id: string, clinic: string) {
+  async function setStage(leadId: string, stage: string, clinic: string) {
+    const prevStage = rows.find((r) => r.leadId === leadId)?.stage;
+    setRows((prev) => prev.map((r) => (r.leadId === leadId ? { ...r, stage } : r))); // otimista
     try {
-      const res = await fetch("/api/admin/outbox/action", {
+      const res = await fetch("/api/admin/lead/stage", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-admin-token": token },
-        body: JSON.stringify({ action, ids: [id] }),
+        body: JSON.stringify({ lead_id: leadId, stage }),
       });
-      if (!res.ok) { setNote("Não foi possível registrar a ação."); return; }
-      setRows((prev) => prev.map((r) => ({ ...r, messages: r.messages.filter((m) => m.id !== id) })).filter((r) => r.messages.length));
-      setNote(action === "done" ? `Marcado como feito: ${clinic}` : `Pulado: ${clinic}`);
-    } catch { setNote("Falha de rede."); }
+      if (!res.ok) throw new Error();
+      setNote(`${clinic}: ${STAGE_LABEL[stage] ?? stage}`);
+    } catch {
+      setRows((prev) => prev.map((r) => (r.leadId === leadId ? { ...r, stage: prevStage ?? "new" } : r)));
+      setNote("Não foi possível salvar o status. Tente de novo.");
+    }
   }
 
   const total = rows.length;
+  const statusCounts = useMemo(() => {
+    const c: Record<string, number> = {};
+    for (const r of rows) c[r.stage] = (c[r.stage] ?? 0) + 1;
+    return c;
+  }, [rows]);
   const visible = useMemo(() => {
     const term = q.trim().toLowerCase();
     return rows.filter((r) => {
       const rk = REC[r.recommended]?.key ?? "call";
       const okF = filter === "all" || rk === filter;
+      const okS = statusFilter === "all" || r.stage === statusFilter;
       const okQ = !term || `${r.clinic} ${r.city ?? ""}`.toLowerCase().includes(term);
-      return okF && okQ;
+      return okF && okS && okQ;
     });
-  }, [rows, filter, q]);
+  }, [rows, filter, statusFilter, q]);
 
   if (state !== "authed") {
     return (
@@ -138,11 +161,25 @@ export default function PainelPage() {
           {kpi("ig", counts.ig ?? 0, "Instagram DM", "ig")}
           {kpi("wa", counts.wa ?? 0, "WhatsApp", "wa")}
           {kpi("call", counts.call ?? 0, "Ligação", "call")}
+          <div className={`kpi kpi-won${statusFilter === "won" ? " active" : ""}`} onClick={() => setStatusFilter((s) => (s === "won" ? "all" : "won"))}>
+            <div className="n tnum">{statusCounts.won ?? 0}</div>
+            <div className="l"><span className="dot won" />Clientes fechados</div>
+          </div>
+        </div>
+
+        <div className="statusbar">
+          <span className="statuslbl">Status:</span>
+          <button className={`spill${statusFilter === "all" ? " active" : ""}`} onClick={() => setStatusFilter("all")}>Todos</button>
+          {STAGES.map((s) => (
+            <button key={s.key} className={`spill st-${s.key}${statusFilter === s.key ? " active" : ""}`} onClick={() => setStatusFilter((cur) => (cur === s.key ? "all" : s.key))}>
+              {s.label} <span className="spill-n">{statusCounts[s.key] ?? 0}</span>
+            </button>
+          ))}
         </div>
 
         <div className="toolbar">
           <input className="search" type="search" placeholder="Buscar clínica ou cidade…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar" />
-          <button className={`allbtn${filter === "all" ? " active" : ""}`} onClick={() => setFilter("all")}>Ver todas</button>
+          <button className={`allbtn${filter === "all" ? " active" : ""}`} onClick={() => setFilter("all")}>Ver todos os canais</button>
         </div>
 
         {note && <p className="notemsg">{note}</p>}
@@ -157,7 +194,10 @@ export default function PainelPage() {
             return (
               <article className="card" key={i}>
                 <header className="card-top">
-                  <div className={`rec rec-${rk}`}>{recLabel}</div>
+                  <div className="badges">
+                    <div className={`rec rec-${rk}`}>{recLabel}</div>
+                    <div className={`stbadge st-${r.stage}`}>{STAGE_LABEL[r.stage] ?? r.stage}</div>
+                  </div>
                   <div className="titlewrap">
                     <h3>{r.clinic}</h3>
                     <span className="loc">{r.city}/{r.uf}</span>
@@ -174,6 +214,12 @@ export default function PainelPage() {
                 {r.recommended === "whatsapp_manual" && (
                   <p className="note">O e-mail cadastrado é pessoal/inválido — envie por <b>WhatsApp</b>. O texto abaixo (rascunho de e-mail) serve de base; encurte para o tom de zap.</p>
                 )}
+                <div className="stage-ctl" role="group" aria-label="Status do prospecto">
+                  {STAGES.map((s) => (
+                    <button key={s.key} className={`stbtn st-${s.key}${r.stage === s.key ? " on" : ""}`}
+                      onClick={() => setStage(r.leadId, s.key, r.clinic)} title={s.label}>{s.short}</button>
+                  ))}
+                </div>
                 {ordered.map((m, j) => (
                   <div className={`msg${j === 0 ? " msg-primary" : ""}`} key={m.id}>
                     <div className="msg-head">
@@ -182,10 +228,6 @@ export default function PainelPage() {
                     </div>
                     {m.subject && <div className="subj">{m.subject}</div>}
                     <pre className="body">{m.body}</pre>
-                    <div className="acts">
-                      <button className="act-done" onClick={() => act("done", m.id, r.clinic)}>Feito ✓</button>
-                      <button className="act-skip" onClick={() => act("reject", m.id, r.clinic)}>Pular</button>
-                    </div>
                   </div>
                 ))}
               </article>
@@ -208,6 +250,7 @@ const CSS = `
     --border:#E1E7E3; --accent:#0E7C66; --accent-ink:#0A5A4A;
     --email:#4F46E5; --ig:#D6336C; --wa:#12925A; --call:#B45309;
     --email-bg:#EEF0FE; --ig-bg:#FDECF3; --wa-bg:#E6F5EC; --call-bg:#FBF0E1;
+    --st-new:#64748B; --st-engaged:#2563EB; --st-qualified:#0E7C66; --st-demo:#7C3AED; --st-won:#12925A; --st-lost:#B91C1C;
     --shadow:0 1px 2px rgba(20,31,27,.04),0 4px 16px rgba(20,31,27,.05);
   }
   @media (prefers-color-scheme:dark){:root{
@@ -215,6 +258,7 @@ const CSS = `
     --border:#27332E; --accent:#2DD4BF; --accent-ink:#5EEAD4;
     --email:#8B93FF; --ig:#F472A6; --wa:#4FCB86; --call:#E0A45C;
     --email-bg:#1D2140; --ig-bg:#33202B; --wa-bg:#172B22; --call-bg:#2E2416;
+    --st-new:#94A3B8; --st-engaged:#7CA0FF; --st-qualified:#2DD4BF; --st-demo:#A78BFA; --st-won:#4FCB86; --st-lost:#F16A6A;
     --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 18px rgba(0,0,0,.35);
   }}
   *{box-sizing:border-box}
@@ -269,11 +313,32 @@ const CSS = `
   .copy.done{background:var(--accent);color:#fff;border-color:var(--accent)}
   .subj{font-size:13px;font-weight:700;padding:9px 12px 0}
   .body{margin:0;padding:10px 12px 13px;white-space:pre-wrap;font-family:inherit;font-size:13px;color:var(--ink);line-height:1.5}
-  .acts{display:flex;gap:8px;padding:0 12px 12px}
-  .act-done,.act-skip{font-size:12.5px;font-weight:650;border-radius:7px;padding:5px 12px;cursor:pointer;border:1px solid var(--border)}
-  .act-done{background:var(--accent);color:#fff;border-color:var(--accent)}
-  .act-skip{background:var(--surface);color:var(--muted)}
-  .act-skip:hover{border-color:var(--call);color:var(--call)}
+  .badges{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .stbadge{font-size:11px;font-weight:750;letter-spacing:.03em;text-transform:uppercase;padding:4px 9px;border-radius:999px;border:1px solid transparent}
+  .stbadge.st-new{color:var(--st-new);background:color-mix(in srgb,var(--st-new) 12%,transparent)}
+  .stbadge.st-engaged{color:var(--st-engaged);background:color-mix(in srgb,var(--st-engaged) 12%,transparent)}
+  .stbadge.st-qualified{color:var(--st-qualified);background:color-mix(in srgb,var(--st-qualified) 12%,transparent)}
+  .stbadge.st-demo{color:var(--st-demo);background:color-mix(in srgb,var(--st-demo) 14%,transparent)}
+  .stbadge.st-won{color:#fff;background:var(--st-won)}
+  .stbadge.st-lost{color:var(--st-lost);background:color-mix(in srgb,var(--st-lost) 12%,transparent)}
+  .kpi-won .n{color:var(--st-won)}
+  .dot.won{background:var(--st-won)}
+  .statusbar{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin:16px 0 2px}
+  .statuslbl{font-size:12.5px;color:var(--muted);font-weight:700;margin-right:2px}
+  .spill{font-size:12.5px;font-weight:600;border:1px solid var(--border);background:var(--surface);color:var(--ink);padding:5px 11px;border-radius:999px;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+  .spill:hover{border-color:var(--accent)}
+  .spill.active{border-color:var(--accent);color:var(--accent-ink);background:var(--surface-2)}
+  .spill-n{font-variant-numeric:tabular-nums;font-size:11.5px;opacity:.65}
+  .stage-ctl{display:flex;flex-wrap:wrap;gap:5px}
+  .stbtn{font-size:11.5px;font-weight:650;border:1px solid var(--border);background:var(--surface);color:var(--muted);padding:4px 9px;border-radius:7px;cursor:pointer;transition:border-color .1s}
+  .stbtn:hover{border-color:var(--accent);color:var(--ink)}
+  .stbtn.on{color:#fff}
+  .stbtn.st-new.on{background:var(--st-new);border-color:var(--st-new)}
+  .stbtn.st-engaged.on{background:var(--st-engaged);border-color:var(--st-engaged)}
+  .stbtn.st-qualified.on{background:var(--st-qualified);border-color:var(--st-qualified)}
+  .stbtn.st-demo.on{background:var(--st-demo);border-color:var(--st-demo)}
+  .stbtn.st-won.on{background:var(--st-won);border-color:var(--st-won)}
+  .stbtn.st-lost.on{background:var(--st-lost);border-color:var(--st-lost)}
   .empty{grid-column:1/-1;text-align:center;color:var(--muted);padding:40px}
   footer{margin-top:34px;color:var(--muted);font-size:12.5px;border-top:1px solid var(--border);padding-top:16px}
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
