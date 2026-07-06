@@ -53,6 +53,7 @@ export default function PainelPage() {
   const [counts, setCounts] = useState<Record<string, number>>({ email: 0, ig: 0, wa: 0, call: 0 });
   const [filter, setFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [view, setView] = useState<"leads" | "posts">("leads");
   const [q, setQ] = useState("");
   const [state, setState] = useState<"idle" | "loading" | "authed" | "error">("idle");
   const [note, setNote] = useState("");
@@ -149,10 +150,17 @@ export default function PainelPage() {
     <>
       <style dangerouslySetInnerHTML={{ __html: CSS }} />
       <div className="wrap">
+        <nav className="topnav">
+          <button className={view === "leads" ? "on" : ""} onClick={() => setView("leads")}>Prospectos</button>
+          <button className={view === "posts" ? "on" : ""} onClick={() => setView("posts")}>Posts do dia</button>
+        </nav>
+
+        {view === "posts" ? <PostsView token={token} /> : (
+        <>
         <header className="top">
           <div className="eyebrow">Sysmax Software · Esteira Comercial</div>
           <h1>Prospectos prontos para abordar</h1>
-          <p className="sub">{total} clínicas veterinárias com mensagem já redigida, cada uma no canal com maior chance de resposta. Clique num contato para abrir o canal; use <b>Copiar</b> para levar a mensagem. Ao contatar, marque <b>Feito</b> (ou <b>Pular</b>) para tirar da fila.</p>
+          <p className="sub">{total} clínicas veterinárias com mensagem já redigida, cada uma no canal com maior chance de resposta. Clique num contato para abrir o canal; use <b>Copiar</b> para levar a mensagem. Ao contatar, marque o status conforme avança.</p>
         </header>
 
         <div className="kpis">
@@ -239,8 +247,121 @@ export default function PainelPage() {
         <footer>
           Canal recomendado por heurística de alcance B2B. Nada é enviado automaticamente por esta tela — a equipe contata pelo canal indicado e registra o resultado. Fonte: CRM sysmax-sales-agent.
         </footer>
+        </>
+        )}
       </div>
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Aba de Posts: lote do dia (5 posts + 2 vídeos + 1 anúncio) para a equipe de
+// marketing baixar a arte / copiar a legenda e publicar (IG, status, Facebook).
+// ---------------------------------------------------------------------------
+type PostContent = { headline?: string; caption?: string; hashtags?: string[]; hook?: string; scenes?: string[]; cta?: string; audio?: string; target?: string; budget?: string };
+type CItem = { id: string; type: string; format: string; status: string; content: PostContent };
+
+function PostsView({ token }: { token: string }) {
+  const [data, setData] = useState<{ date: string | null; posts: CItem[]; videos: CItem[]; ad: CItem | null } | null>(null);
+  const [st, setSt] = useState<"loading" | "ok" | "empty" | "error">("loading");
+  const [copied, setCopied] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/painel/content/today", { headers: { "x-admin-token": token } });
+        if (!res.ok) { setSt("error"); return; }
+        const j = await res.json();
+        if (!j.ok || (!j.posts?.length && !j.videos?.length && !j.ad)) { setSt("empty"); return; }
+        setData(j); setSt("ok");
+      } catch { setSt("error"); }
+    })();
+  }, [token]);
+
+  async function copy(id: string, text: string) {
+    try { await navigator.clipboard.writeText(text); } catch { /* */ }
+    setCopied(id); setTimeout(() => setCopied((c) => (c === id ? null : c)), 1400);
+  }
+  const legend = (c: PostContent) => [c.caption, (c.hashtags ?? []).join(" ")].filter(Boolean).join("\n\n");
+  const imgUrl = (id: string, size: string) => `/api/painel/post-image?id=${id}&size=${size}&t=${encodeURIComponent(token)}`;
+
+  if (st === "loading") return <p className="sub" style={{ marginTop: 24 }}>Carregando o conteúdo de hoje…</p>;
+  if (st === "error") return <p className="notemsg" style={{ marginTop: 24 }}>Não foi possível carregar o conteúdo.</p>;
+  if (st === "empty") return (
+    <div style={{ marginTop: 24 }}>
+      <header className="top"><div className="eyebrow">Sysmax Software · Conteúdo</div><h1>Posts do dia</h1></header>
+      <p className="notemsg">O lote de hoje ainda não foi gerado. Ele é criado automaticamente toda manhã — volte mais tarde.</p>
+    </div>
+  );
+
+  const d = data!;
+  return (
+    <div>
+      <header className="top">
+        <div className="eyebrow">Sysmax Software · Conteúdo</div>
+        <h1>Posts do dia</h1>
+        <p className="sub">5 posts, 2 vídeos e 1 anúncio prontos para {d.date ?? "hoje"}. Baixe a arte, copie a legenda e publique no Instagram, status do WhatsApp e Facebook. Os roteiros de vídeo são para a equipe gravar/editar.</p>
+      </header>
+
+      <h2 className="secttl">Posts ({d.posts.length})</h2>
+      <div className="grid">
+        {d.posts.map((p) => (
+          <article className="card pcard" key={p.id}>
+            <div className="pill-row"><span className="rec rec-email">{p.format}</span></div>
+            <img className="post-art" src={imgUrl(p.id, p.format === "story" ? "story" : "feed")} alt="arte do post" loading="lazy" />
+            <div className="phead">{p.content.headline}</div>
+            <pre className="body">{p.content.caption}</pre>
+            {!!(p.content.hashtags ?? []).length && <div className="tags">{(p.content.hashtags ?? []).join(" ")}</div>}
+            <div className="pactions">
+              <button className={`copy${copied === p.id ? " done" : ""}`} onClick={() => copy(p.id, legend(p.content))}>{copied === p.id ? "Copiado ✓" : "Copiar legenda"}</button>
+              <a className="dl" href={imgUrl(p.id, p.format === "story" ? "story" : "feed")} download={`post-${p.id}.png`} target="_blank" rel="noopener noreferrer">Baixar arte</a>
+            </div>
+          </article>
+        ))}
+      </div>
+
+      <h2 className="secttl">Vídeos — roteiros ({d.videos.length})</h2>
+      <div className="grid">
+        {d.videos.map((v) => (
+          <article className="card" key={v.id}>
+            <div className="pill-row"><span className="rec rec-ig">Reel / vídeo</span></div>
+            <div className="phead">{v.content.headline}</div>
+            <div className="roteiro">
+              {v.content.hook && <p><b>Gancho:</b> {v.content.hook}</p>}
+              {!!(v.content.scenes ?? []).length && <ol>{(v.content.scenes ?? []).map((s, i) => <li key={i}>{s}</li>)}</ol>}
+              {v.content.cta && <p><b>CTA:</b> {v.content.cta}</p>}
+              {v.content.audio && <p><b>Áudio:</b> {v.content.audio}</p>}
+            </div>
+            {v.content.caption && <pre className="body">{v.content.caption}</pre>}
+            <div className="pactions">
+              <button className={`copy${copied === v.id ? " done" : ""}`} onClick={() => copy(v.id, `${v.content.hook ?? ""}\n\n${(v.content.scenes ?? []).join("\n")}\n\n${v.content.cta ?? ""}\n\n${legend(v.content)}`)}>{copied === v.id ? "Copiado ✓" : "Copiar roteiro"}</button>
+            </div>
+          </article>
+        ))}
+      </div>
+
+      {d.ad && (
+        <>
+          <h2 className="secttl">Anúncio para impulsionar</h2>
+          <div className="grid">
+            <article className="card pcard" key={d.ad.id}>
+              <div className="pill-row"><span className="rec rec-call">Anúncio</span></div>
+              <img className="post-art" src={imgUrl(d.ad.id, "feed")} alt="arte do anúncio" loading="lazy" />
+              <div className="phead">{d.ad.content.headline}</div>
+              <pre className="body">{d.ad.content.caption}</pre>
+              <div className="roteiro">
+                {d.ad.content.target && <p><b>Público sugerido:</b> {d.ad.content.target}</p>}
+                {d.ad.content.budget && <p><b>Verba sugerida:</b> {d.ad.content.budget}</p>}
+              </div>
+              <div className="pactions">
+                <button className={`copy${copied === d.ad.id ? " done" : ""}`} onClick={() => copy(d.ad!.id, legend(d.ad!.content))}>{copied === d.ad.id ? "Copiado ✓" : "Copiar texto"}</button>
+                <a className="dl" href={imgUrl(d.ad.id, "feed")} download={`anuncio-${d.ad.id}.png`} target="_blank" rel="noopener noreferrer">Baixar arte</a>
+              </div>
+            </article>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -341,5 +462,22 @@ const CSS = `
   .stbtn.st-lost.on{background:var(--st-lost);border-color:var(--st-lost)}
   .empty{grid-column:1/-1;text-align:center;color:var(--muted);padding:40px}
   footer{margin-top:34px;color:var(--muted);font-size:12.5px;border-top:1px solid var(--border);padding-top:16px}
+  .topnav{display:flex;gap:6px;margin-bottom:22px;border-bottom:1px solid var(--border)}
+  .topnav button{font-size:14px;font-weight:650;color:var(--muted);background:none;border:none;border-bottom:2px solid transparent;padding:10px 14px;cursor:pointer;margin-bottom:-1px}
+  .topnav button:hover{color:var(--ink)}
+  .topnav button.on{color:var(--accent-ink);border-bottom-color:var(--accent)}
+  .secttl{font-size:15px;font-weight:750;letter-spacing:-.01em;margin:26px 0 2px}
+  .pill-row{display:flex;gap:6px}
+  .pcard{gap:12px}
+  .post-art{width:100%;border-radius:12px;border:1px solid var(--border);display:block;aspect-ratio:4/5;object-fit:cover;background:var(--surface-2)}
+  .phead{font-size:15.5px;font-weight:750;line-height:1.25;letter-spacing:-.01em;text-wrap:balance}
+  .tags{font-size:12.5px;color:var(--accent-ink);font-weight:600}
+  .roteiro{font-size:13px;color:var(--ink);display:flex;flex-direction:column;gap:6px}
+  .roteiro p{margin:0}
+  .roteiro b{font-weight:700}
+  .roteiro ol{margin:2px 0;padding-left:20px;display:flex;flex-direction:column;gap:4px}
+  .pactions{display:flex;gap:8px;flex-wrap:wrap;margin-top:2px}
+  .dl{font-size:12.5px;font-weight:650;text-decoration:none;background:var(--accent);color:#fff;border:1px solid var(--accent);padding:5px 14px;border-radius:7px}
+  .dl:hover{background:var(--accent-ink)}
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 `;
