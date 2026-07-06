@@ -9,7 +9,7 @@ import { salesDb } from "@/lib/supabase";
 // ===========================================================================
 export const runtime = "nodejs";
 
-type Item = { id: string; pillar: string; format: string; brief: string; scheduled_for: string | null; status: string };
+type Item = { id: string; pillar: string; format: string; brief: string; scheduled_for: string | null; status: string; asset_path: string | null };
 
 export async function GET(req: NextRequest) {
   if (!isAuthorizedViewer(req)) return new NextResponse("unauthorized", { status: 401 });
@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
   // pega o lote mais recente (posts/videos/ad), até 3 dias atrás
   const { data, error } = await salesDb
     .from("content_calendar")
-    .select("id,pillar,format,brief,scheduled_for,status")
+    .select("id,pillar,format,brief,scheduled_for,status,asset_path")
     .in("pillar", ["post", "video", "ad"])
     .order("scheduled_for", { ascending: false })
     .order("created_at", { ascending: false })
@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
   const parse = (i: Item) => {
     let content: Record<string, unknown> = {};
     try { content = JSON.parse(i.brief); } catch { content = { caption: i.brief }; }
-    return { id: i.id, type: i.pillar, format: i.format, status: i.status, content };
+    return { id: i.id, type: i.pillar, format: i.format, status: i.status, assetPath: i.asset_path ?? null, content };
   };
 
   const posts = batch.filter((i) => i.pillar === "post").map(parse);

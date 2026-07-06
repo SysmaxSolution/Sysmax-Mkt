@@ -259,7 +259,7 @@ export default function PainelPage() {
 // marketing baixar a arte / copiar a legenda e publicar (IG, status, Facebook).
 // ---------------------------------------------------------------------------
 type PostContent = { headline?: string; caption?: string; hashtags?: string[]; hook?: string; scenes?: string[]; cta?: string; audio?: string; target?: string; budget?: string };
-type CItem = { id: string; type: string; format: string; status: string; content: PostContent };
+type CItem = { id: string; type: string; format: string; status: string; assetPath?: string | null; content: PostContent };
 
 function PostsView({ token }: { token: string }) {
   const [data, setData] = useState<{ date: string | null; posts: CItem[]; videos: CItem[]; ad: CItem | null } | null>(null);
@@ -324,7 +324,8 @@ function PostsView({ token }: { token: string }) {
       <div className="grid">
         {d.videos.map((v) => (
           <article className="card" key={v.id}>
-            <div className="pill-row"><span className="rec rec-ig">Reel / vídeo</span></div>
+            <div className="pill-row"><span className="rec rec-ig">Reel / vídeo</span>{v.assetPath && <span className="rec rec-wa">Renderizado</span>}</div>
+            {v.assetPath && <video className="post-art" src={v.assetPath} controls preload="metadata" playsInline />}
             <div className="phead">{v.content.headline}</div>
             <div className="roteiro">
               {v.content.hook && <p><b>Gancho:</b> {v.content.hook}</p>}
@@ -335,6 +336,7 @@ function PostsView({ token }: { token: string }) {
             {v.content.caption && <pre className="body">{v.content.caption}</pre>}
             <div className="pactions">
               <button className={`copy${copied === v.id ? " done" : ""}`} onClick={() => copy(v.id, `${v.content.hook ?? ""}\n\n${(v.content.scenes ?? []).join("\n")}\n\n${v.content.cta ?? ""}\n\n${legend(v.content)}`)}>{copied === v.id ? "Copiado ✓" : "Copiar roteiro"}</button>
+              {v.assetPath && <a className="dl" href={v.assetPath} download={`video-${v.id}.mp4`} target="_blank" rel="noopener noreferrer">Baixar vídeo</a>}
             </div>
           </article>
         ))}
@@ -470,6 +472,7 @@ const CSS = `
   .pill-row{display:flex;gap:6px}
   .pcard{gap:12px}
   .post-art{width:100%;border-radius:12px;border:1px solid var(--border);display:block;aspect-ratio:4/5;object-fit:cover;background:var(--surface-2)}
+  video.post-art{aspect-ratio:9/16;object-fit:contain;background:#0A0A0A;max-height:520px}
   .phead{font-size:15.5px;font-weight:750;line-height:1.25;letter-spacing:-.01em;text-wrap:balance}
   .tags{font-size:12.5px;color:var(--accent-ink);font-weight:600}
   .roteiro{font-size:13px;color:var(--ink);display:flex;flex-direction:column;gap:6px}
