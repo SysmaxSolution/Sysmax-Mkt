@@ -9,6 +9,7 @@ import {
   insertMessage,
   isRecentEcho,
   setConversationStatus,
+  startHumanConversation,
 } from "@/crm/leads";
 
 export const runtime = "nodejs";
@@ -20,6 +21,27 @@ export const runtime = "nodejs";
 
 function normalizeEvent(event: string | undefined): string {
   return (event ?? "").toUpperCase().replace(/\./g, "_");
+}
+
+// Padrões de resposta automática (URA/robô de clínica): o bot NÃO deve
+// conversar com outro robô — registra a mensagem e fica em silêncio.
+const AUTO_REPLY_PATTERNS: RegExp[] = [
+  /mensagem\s+autom[aá]tica/i,
+  /resposta\s+autom[aá]tica/i,
+  /atendimento\s+(autom[aá]tico|virtual|eletr[oô]nico)/i,
+  /fora\s+do\s+(nosso\s+)?hor[aá]rio/i,
+  /hor[aá]rio\s+de\s+(atendimento|funcionamento)\s*[:\n]/i,
+  /retornaremos\s+(o\s+contato|em\s+breve|assim\s+que)/i,
+  /responderemos\s+(em\s+breve|assim\s+que|o\s+mais\s+breve)/i,
+  /digite\s+(o\s+n[uú]mero|uma\s+op[cç][aã]o|a\s+op[cç][aã]o|\d)/i,
+  /(escolha|selecione)\s+uma\s+(das\s+)?op[cç][aãoõ]/i,
+  /aguarde\s+(um\s+momento|um\s+instante|que\s+em\s+breve)/i,
+  /protocolo\s+(de\s+atendimento|n[uú]mero)/i,
+  /este\s+(canal|n[uú]mero)\s+n[aã]o\s+[eé]\s+monitorado/i,
+];
+
+function looksLikeAutoReply(text: string): boolean {
+  return AUTO_REPLY_PATTERNS.some((re) => re.test(text));
 }
 
 function extractText(msgObj: Record<string, unknown> | undefined): string | null {
@@ -70,7 +92,18 @@ export async function POST(request: NextRequest) {
   // ── fromMe: eco do bot OU resposta humana pelo aparelho (handoff) ─────────
   if (fromMe) {
     const conv = await getActiveConversationByPhone(phone);
-    if (!conv) return NextResponse.json({ received: true });
+    if (!conv) {
+      // Conversa NOVA iniciada pelo consultor pelo aparelho → nasce em modo
+      // humano. Assim o bot não intervém quando a clínica responde (nem
+      // quando chega a saudação automática dela).
+      if (messageText?.trim()) {
+        const started = await startHumanConversation(phone, null);
+        if (started) {
+          await insertMessage({ conversationId: started.id, direction: "outbound", content: messageText, sentBy: "human", externalId });
+        }
+      }
+      return NextResponse.json({ received: true });
+    }
     if (messageText?.trim() && (await isRecentEcho(conv.id, messageText))) {
       return NextResponse.json({ received: true }); // eco do que o bot enviou
     }
@@ -111,6 +144,12 @@ async function processInbound(params: {
 
   // Conversa em atendimento humano: não aciona o bot.
   if (conversation.status === "human") return;
+
+  // Resposta automática de robô/URA da clínica: registra, mas não responde.
+  if (looksLikeAutoReply(messageText)) {
+    console.log("[sales-webhook] mensagem automática detectada — bot não responde:", messageText.slice(0, 80));
+    return;
+  }
 
   const result = await runSalesAgent({ lead, conversationId: conversation.id, userMessage: messageText });
 

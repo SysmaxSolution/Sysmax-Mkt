@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createMessageWithFallback, hasFallbackKey, SALES_MODEL } from "@/lib/anthropic";
 import { PRODUCT_INFO, SALES_SYSTEM_PROMPT } from "@/lib/brand";
+import { getLatestPlaybook, playbookBlock } from "@/lib/playbook";
 import {
   getRecentHistory,
   updateLeadProfile,
@@ -105,7 +106,9 @@ export async function runSalesAgent(params: {
     month: "long",
     year: "numeric",
   });
-  const systemPrompt = [SALES_SYSTEM_PROMPT, `Hoje é ${today}.`, leadContext(lead)].join("\n\n");
+  // Diretrizes aprendidas das conversas reais (cron prompt-learning).
+  const learned = playbookBlock(await getLatestPlaybook());
+  const systemPrompt = [SALES_SYSTEM_PROMPT + learned, `Hoje é ${today}.`, leadContext(lead)].join("\n\n");
 
   let stageChanged: LeadStage | undefined;
   let currentMessages = [...messages];

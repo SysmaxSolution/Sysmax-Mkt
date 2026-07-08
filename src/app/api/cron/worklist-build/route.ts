@@ -3,6 +3,7 @@ import { isAuthorizedCron } from "@/lib/cron-auth";
 import { salesDb } from "@/lib/supabase";
 import { createMessageWithFallback, SALES_MODEL } from "@/lib/anthropic";
 import { BRAND, PRODUCT_INFO } from "@/lib/brand";
+import { getLatestPlaybook, playbookBlock } from "@/lib/playbook";
 
 // ===========================================================================
 // Builder da WORKLIST manual. Para clínicas sem e-mail (enrichment_status=
@@ -48,6 +49,9 @@ export async function GET(req: NextRequest) {
     .limit(BUILD_CAP * 3);
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
 
+  // Diretrizes aprendidas das conversas reais (cron prompt-learning).
+  const system = SYSTEM + playbookBlock(await getLatestPlaybook());
+
   // exclui quem já tem item de worklist (call/ig_dm) no outbox
   const ids = (leads ?? []).map((l) => l.id);
   const done = new Set<string>();
@@ -72,7 +76,7 @@ Instagram: ${lead.instagram_handle ? "@" + lead.instagram_handle : "(não tem)"}
         model: SALES_MODEL,
         max_tokens: 700,
         temperature: 0.7,
-        system: SYSTEM,
+        system,
         messages: [{ role: "user", content: `Prepare a abordagem para esta clínica:\n${context}` }],
       });
       const raw = extractText(msg);

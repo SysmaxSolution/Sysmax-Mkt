@@ -81,6 +81,28 @@ export async function getOrCreateConversation(leadId: string): Promise<Conversat
   return created as Conversation;
 }
 
+// Conversa iniciada pelo CONSULTOR HUMANO pelo aparelho (fromMe sem conversa
+// ativa): nasce já em status 'human'. Sem isso, a resposta do prospect —
+// inclusive a mensagem automática de saudação da clínica — criava uma conversa
+// 'bot' e o agente atropelava a abordagem manual do fundador.
+export async function startHumanConversation(
+  phone: string,
+  name: string | null,
+): Promise<(Conversation & { lead_id: string }) | null> {
+  const lead = await findOrCreateLeadByPhone(phone, name);
+  if (!lead) return null;
+  const { data, error } = await salesDb
+    .from("conversations")
+    .insert({ lead_id: lead.id, channel: "whatsapp", status: "human" })
+    .select("id, status, lead_id")
+    .single();
+  if (error) {
+    console.error("[crm] falha ao criar conversa humana:", error.message);
+    return null;
+  }
+  return data as Conversation & { lead_id: string };
+}
+
 // Conversa ativa do lead por telefone — usado no fluxo fromMe (handoff).
 export async function getActiveConversationByPhone(
   phone: string,

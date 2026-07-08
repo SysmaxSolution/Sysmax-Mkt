@@ -4,6 +4,7 @@ import { salesDb } from "@/lib/supabase";
 import { createMessageWithFallback, SALES_MODEL } from "@/lib/anthropic";
 import { isSuppressed } from "@/lib/suppression";
 import { BRAND, PRODUCT_INFO } from "@/lib/brand";
+import { getLatestPlaybook, playbookBlock } from "@/lib/playbook";
 
 // ===========================================================================
 // Builder do outbound frio (e-mail). NÃO ENVIA — apenas prepara rascunhos
@@ -67,6 +68,9 @@ export async function GET(req: NextRequest) {
     .limit(BUILD_CAP * 3);
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
 
+  // Diretrizes aprendidas das conversas reais (cron prompt-learning).
+  const system = EMAIL_SYSTEM + playbookBlock(await getLatestPlaybook());
+
   // 2) excluir leads que já têm e-mail no outbox (qualquer status).
   const ids = (leads ?? []).map((l) => l.id);
   const alreadyQueued = new Set<string>();
@@ -97,7 +101,7 @@ Sistema atual conhecido: ${lead.current_software ?? "(desconhecido)"}`;
         model: SALES_MODEL,
         max_tokens: 700,
         temperature: 0.7,
-        system: EMAIL_SYSTEM,
+        system,
         messages: [{ role: "user", content: `Escreva o e-mail para esta clínica:\n${context}` }],
       });
       const draft = parseDraft(extractText(msg));

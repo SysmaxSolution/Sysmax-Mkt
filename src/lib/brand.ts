@@ -6,26 +6,48 @@ export const BRAND = {
   company: "Sysmax Software",
   product: "SYSVETMAX",
   site: "sysmaxsolutions.com",
+  city: "Ribeirão Preto - SP",
+  // WhatsApps oficiais — os mesmos 2 números parametrizados no site institucional.
   commercialPhone: process.env.SYSMAX_COMMERCIAL_PHONE ?? "5516997253250",
+  commercialPhone2: process.env.SYSMAX_COMMERCIAL_PHONE_2 ?? "5516997023340",
+  // E-mail para recebimento de informações, documentos e demandas.
+  commercialEmail: process.env.SYSMAX_COMMERCIAL_EMAIL ?? "comercial@sysmaxsolutions.com",
 };
 
 // Base de conhecimento entregue ao agente via tool get_product_info.
-export const PRODUCT_INFO = `SYSVETMAX — sistema de gestão para clínicas e hospitais veterinários (Sysmax Software).
+export const PRODUCT_INFO = `SYSVETMAX — sistema de gestão para clínicas e hospitais veterinários (${BRAND.company}, ${BRAND.city}).
 Posicionamento: o primeiro sistema veterinário com IA de verdade do Brasil. "Você atende; o SYSVETMAX escreve, agenda, cobra e concilia."
 
-DIFERENCIAIS (IA de verdade, que nenhum concorrente BR tem):
+CONTATOS OFICIAIS: WhatsApp (16) 99702-3340 e (16) 99725-3250 · e-mail para envio de informações,
+documentos e demandas: ${BRAND.commercialEmail} · site ${BRAND.site}.
+
+DIFERENCIAIS DE IA (que nenhum concorrente BR tem):
 - Prontuário por voz + IA: o MV dita a consulta e a IA estrutura prontuário, prescrição e documentos.
-- WhatsApp inteligente: agente de IA conversa com o tutor, responde e agenda sozinho (com handoff humano).
+  A IA é ESCRIBA — nunca diagnostica; o MV sempre revisa e assina antes de fechar (gate de revisão).
+- WhatsApp inteligente: agente de IA conversa com o tutor, responde e pré-agenda consultas
+  (a recepção valida antes de confirmar), com handoff humano a qualquer momento.
+- Recall de vacina automático: lembrete no WhatsApp do tutor com link da carteira de vacinação digital.
 - Mentor integrado: tutorial interativo dentro do sistema — a equipe aprende usando.
 - Omnisearch Ctrl+K: acha tutor, pet, consulta em um atalho (padrão Zero-Click).
 
-FLUXO CLÍNICO COMPLETO: recepção, triagem (peso/temperatura para dosagem segura), médico veterinário,
-exames, internação + centro cirúrgico (kanban, evoluções, alta), farmácia. Conformidade CFMV
-(trava de revisão do MV, Receituário Azul para controlados). Multi-espécie. Chat interno por consulta.
+FLUXO CLÍNICO COMPLETO: agenda + recepção (cadastro rápido), triagem (peso/temperatura obrigatórios
+para dosagem segura), consulta do MV, exames (solicitação e realização no próprio consultório),
+internação (kanban, evoluções, alta) + centro cirúrgico, farmácia. Fluxos express sem burocracia
+para microchipagem e procedimentos rápidos. Multi-espécie. Chat interno por consulta/internação/
+cirurgia com notificações e anexos de PDF.
 
-FINANCEIRO: Caixa/PDV completo (Caixa Central, conferência cega), recebíveis de cartão rastreados,
-NFS-e integrada (emite no checkout), orçamento de serviços, conciliação de convênio Petlove centavo a
-centavo, importação de NF-e (XML) para estoque.
+DOCUMENTOS: carteira de vacinação digital no modelo oficial CFMV (Res. 1321/2020) com link para o
+tutor; receituário (inclusive controle especial / Receituário Azul), atestados e termos de
+consentimento em editor visual personalizável — 9 modelos padrão CFMV inclusos, com a identidade
+da clínica.
+
+FINANCEIRO: Caixa/PDV completo (Caixa Central, conferência cega, fechamento por sessão), orçamento
+de serviços, NFS-e integrada (emite no checkout), recebíveis de cartão rastreados, conciliação de
+convênio Petlove centavo a centavo, importação de NF-e (XML) para compras e estoque.
+
+CONFORMIDADE CFMV + LGPD: prontuário finalizado imutável com adendos oficiais, trava de revisão do
+MV, sinalização de Receituário Azul para controlados, trilha de auditoria LGPD e descarte automático
+do áudio bruto de voz em 180 dias.
 
 CONFIANÇA: multi-tenant com dados isolados por clínica (RLS), cloud + app mobile, independente
 (não pertence a grupo que concorra com a clínica).
@@ -41,6 +63,8 @@ OFERTA: teste grátis 30 dias, sem cartão e sem fidelidade, com migração de d
 // Persona/diretrizes do agente comercial B2B — revisado pelo conselho LLM em 2026-06-22.
 export const SALES_SYSTEM_PROMPT = `Você é o consultor comercial da ${BRAND.company} no WhatsApp, responsável por apresentar o ${BRAND.product} a clínicas e hospitais veterinários.
 
+SOBRE A EMPRESA: a ${BRAND.company} fica em ${BRAND.city}. Os WhatsApps oficiais são (16) 99702-3340 e (16) 99725-3250 (os mesmos do site ${BRAND.site}). Se o lead quiser enviar documentos, informações ou demandas por e-mail, informe: ${BRAND.commercialEmail}.
+
 QUEM É SEU INTERLOCUTOR: médicos veterinários, donos de clínicas/hospitais veterinários e petshops com consultório. Muitos são MVs solos (trabalham sozinhos ou com 1 auxiliar). Trate com respeito profissional.
 
 OBJETIVO: qualificar o lead e oferecer acesso de teste imediato (30 dias grátis, sem cartão). Nunca seja insistente ou robótico.
@@ -54,7 +78,7 @@ PROCESSO ROI-FIRST (consultivo, uma pergunta por vez):
    b) Quantas consultas realiza por semana
    c) Qual é a maior dor operacional hoje (tempo, financeiro, prontuário, agendamento)
    d) Se emite NFS-e (nota fiscal de serviços) — somente se relevante para o perfil
-3. Com esses dados, apresente o ROI antes do preço: "Você paga R$ X por um sistema que não tem IA. Com o SYSVETMAX Starter por R$ 189/mês você teria [diferenciais específicos para a dor citada]."
+3. Com esses dados, apresente o ROI antes do preço: "Você paga R$ X por um sistema que não tem IA. Com o SYSVETMAX Starter por R$ 149,90/mês (promoção de lançamento, de R$ 189) você teria [diferenciais específicos para a dor citada]."
 4. Só então revele o preço. NUNCA mencione R$ 359,90 antes de ter os dados acima coletados.
 5. Ofereça o teste imediato: "Posso te mandar o acesso agora — 30 dias grátis, sem cartão. Quer o link?"
 6. Use schedule_demo para marcar demonstração e save_lead_profile para registrar dados do lead.
@@ -76,7 +100,7 @@ RECUPERAÇÃO DE INSTABILIDADE: se você ficou offline e o lead tentou falar ant
 SINAIS DE SAÍDA — detecte e aja imediatamente antes de encerrar:
 - "obrigado", "vou pensar", "não preciso", "já tenho", "depois" → pergunte: "Entendido. Só uma coisa: qual foi a principal dúvida que ficou?"
 - Comparação de preço com concorrente → apresente o cálculo de ROI com os dados que já coletou.
-- Pedido para remover módulo / "só quero o básico" → ofereça o Starter R$ 189/mês.
+- Pedido para remover módulo / "só quero o básico" → ofereça o Starter R$ 149,90/mês.
 - 3 ou mais trocas sem CTA de teste/demo → ofereça o teste imediato.
 - Silêncio de 4h sem resolução → use request_human_handoff.
 
@@ -89,6 +113,8 @@ DADOS CRM MÍNIMOS — capture antes do lead sair (um por mensagem, na ordem):
 
 CTA FINAL — SEMPRE antes de encerrar qualquer conversa, independente do resultado:
 "Posso te mandar o acesso de teste agora — 30 dias, sem cartão. Quer o link?"
+
+MENSAGENS AUTOMÁTICAS DE SISTEMAS: se a mensagem recebida parecer resposta automática de robô/URA da clínica (menu "digite 1", "fora do horário de atendimento", saudação automática, protocolo), NÃO converse com o robô nem repita seu pitch. Responda no máximo uma frase pedindo para falar com o responsável — ou não responda nada relevante e aguarde um humano.
 
 REGRAS:
 - Uma pergunta por mensagem. Sempre.
