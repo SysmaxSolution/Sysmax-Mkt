@@ -24,6 +24,22 @@ function normalizeEvent(event: string | undefined): string {
   return (event ?? "").toUpperCase().replace(/\./g, "_");
 }
 
+// ── Modo proprietário ───────────────────────────────────────────────────────
+// Números do DONO da empresa: o bot NUNCA trata como prospect. Atua como
+// ponte: registra tudo que chegar (comentários e áudios encaminhados, ex.:
+// respostas do Dr. Vinicius) para o Claude puxar depois, e confirma o
+// encerramento quando o dono disser "isso é tudo".
+const OWNER_PHONES = (process.env.OWNER_PHONES ?? "5516996095475")
+  .split(",")
+  .map((s) => s.replace(/\D/g, ""))
+  .filter(Boolean);
+
+function isOwnerPhone(phone: string): boolean {
+  return OWNER_PHONES.includes(phone.replace(/\D/g, ""));
+}
+
+const OWNER_DONE_RE = /isso\s+[eé]\s+tudo/i;
+
 // Padrões de resposta automática (URA/robô de clínica): o bot NÃO deve
 // conversar com outro robô — registra a mensagem e fica em silêncio.
 const AUTO_REPLY_PATTERNS: RegExp[] = [
@@ -116,6 +132,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true });
   }
 
+  // Mensagem do PROPRIETÁRIO: nunca aciona o agente de vendas.
+  if (isOwnerPhone(phone)) {
+    try {
+      await processOwnerInbound({ phone, messageText, msgData, externalId });
+    } catch (err) {
+      console.error("[sales-webhook] erro no modo proprietário:", err);
+    }
+    return NextResponse.json({ received: true });
+  }
+
   if (!messageText?.trim()) return NextResponse.json({ received: true });
 
   try {
@@ -124,6 +150,56 @@ export async function POST(request: NextRequest) {
     console.error("[sales-webhook] erro ao processar:", err);
   }
   return NextResponse.json({ received: true });
+}
+
+// Ponte proprietário → Claude: registra comentários e áudios encaminhados no
+// CRM (o binário do áudio fica no armazém da Evolution, de onde o Claude
+// baixa). Responde só no início de uma rajada e no encerramento, para não
+// poluir o chat do dono durante os encaminhamentos.
+async function processOwnerInbound(params: {
+  phone: string;
+  messageText: string | null;
+  msgData: Record<string, unknown>;
+  externalId: string | null;
+}) {
+  const { phone, messageText, msgData, externalId } = params;
+
+  const lead = await findOrCreateLeadByPhone(phone, null);
+  if (!lead) return;
+  const conversation = await getOrCreateConversation(lead.id);
+  if (!conversation) return;
+
+  const audio = (msgData.message as Record<string, unknown> | undefined)?.audioMessage as
+    | { seconds?: number }
+    | undefined;
+  const content = messageText?.trim()
+    ? messageText
+    : audio
+      ? `[áudio encaminhado ${audio.seconds ?? "?"}s]`
+      : "[mídia não textual]";
+
+  // Rajada nova? (nenhuma mensagem na última meia hora) → avisa que está na escuta.
+  const lastOutboundAt = await getLastOutboundAt(conversation.id);
+  const quietForMs = lastOutboundAt ? Date.now() - lastOutboundAt.getTime() : Infinity;
+
+  await insertMessage({ conversationId: conversation.id, direction: "inbound", content, sentBy: "client", externalId });
+
+  if (messageText && OWNER_DONE_RE.test(messageText)) {
+    const done =
+      "Recebido, chefe! ✅ Lote encerrado — o Claude vai baixar os áudios da Evolution, transcrever e organizar as respostas no questionário.";
+    if (await safeSend(phone, done)) {
+      await insertMessage({ conversationId: conversation.id, direction: "outbound", content: done, sentBy: "bot" });
+    }
+    return;
+  }
+
+  if (quietForMs > 30 * 60_000) {
+    const intro =
+      'Na escuta, chefe 👊 Modo ponte ativado: estou registrando cada áudio/comentário encaminhado. Quando terminar, diga "Isso é tudo até o momento".';
+    if (await safeSend(phone, intro)) {
+      await insertMessage({ conversationId: conversation.id, direction: "outbound", content: intro, sentBy: "bot" });
+    }
+  }
 }
 
 async function processInbound(params: {
