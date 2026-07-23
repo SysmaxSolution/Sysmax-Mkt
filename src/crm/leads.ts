@@ -183,6 +183,22 @@ export async function isRecentEcho(conversationId: string, content: string): Pro
   return data.some((m) => isEchoMatch((m as { content: string }).content, content));
 }
 
+// Momento da última mensagem OUTBOUND (bot ou humano) da conversa. É a
+// referência do timeout de handoff: numa conversa 'human', se ninguém do
+// nosso lado escreve há mais de N minutos, o bot reassume o atendimento.
+export async function getLastOutboundAt(conversationId: string): Promise<Date | null> {
+  const { data } = await salesDb
+    .from("messages")
+    .select("created_at")
+    .eq("conversation_id", conversationId)
+    .eq("direction", "outbound")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const at = (data as { created_at?: string } | null)?.created_at;
+  return at ? new Date(at) : null;
+}
+
 // Status atual da conversa — usado para re-checar handoff logo antes de o
 // bot enviar (o humano pode ter assumido durante o processamento do agente).
 export async function getConversationStatus(

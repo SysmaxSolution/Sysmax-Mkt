@@ -6,6 +6,7 @@ import {
   getOrCreateConversation,
   getActiveConversationByPhone,
   getConversationStatus,
+  getLastOutboundAt,
   insertMessage,
   isRecentEcho,
   setConversationStatus,
@@ -142,8 +143,18 @@ async function processInbound(params: {
   // Registra a mensagem recebida.
   await insertMessage({ conversationId: conversation.id, direction: "inbound", content: messageText, sentBy: "client", externalId });
 
-  // Conversa em atendimento humano: não aciona o bot.
-  if (conversation.status === "human") return;
+  // Conversa em atendimento humano: o bot fica em silêncio ENQUANTO o humano
+  // estiver presente. Se ninguém do nosso lado (humano ou bot) escreve há mais
+  // de HUMAN_IDLE_TAKEOVER_MINUTES (default 60), o bot reassume — evita
+  // prospect falando sozinho porque o consultor esqueceu a conversa.
+  if (conversation.status === "human") {
+    const idleMinutes = parseInt(process.env.HUMAN_IDLE_TAKEOVER_MINUTES ?? "60", 10);
+    const lastOutboundAt = await getLastOutboundAt(conversation.id);
+    const humanActive = lastOutboundAt && Date.now() - lastOutboundAt.getTime() < idleMinutes * 60_000;
+    if (humanActive) return;
+    await setConversationStatus(conversation.id, "bot");
+    console.log(`[sales-webhook] humano inativo há +${idleMinutes}min — bot reassumiu a conversa`);
+  }
 
   // Resposta automática de robô/URA da clínica: registra, mas não responde.
   if (looksLikeAutoReply(messageText)) {
