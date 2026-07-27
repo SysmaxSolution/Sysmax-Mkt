@@ -40,6 +40,29 @@ function isOwnerPhone(phone: string): boolean {
 
 const OWNER_DONE_RE = /isso\s+[eé]\s+tudo/i;
 
+// ── Lista de bloqueio TOTAL ─────────────────────────────────────────────────
+// Números em que o bot JAMAIS abre a boca (ordem estrita do Diretor 27/07:
+// conversas da Clínica Animais são conduzidas SÓ por humanos). O webhook
+// ignora o evento por completo — não registra, não processa, não responde.
+// Adicionar mais números via env BOT_BLOCKED_PHONES (CSV, só dígitos).
+const BLOCKED_PHONES = new Set(
+  [
+    "5521979770080", // ASL Softhouse / Worklist (Flavio) — Clínica Animais
+    "551141336300",  // MedMax (analisador MaxBio) — Clínica Animais
+    "5511984822612", // Ambra PACS (Mariana) — Clínica Animais
+    "553139910184",  // Manancial Medical — Clínica Animais
+    "5511977697777", // Acessória Científica (Hellen) — Clínica Animais
+    "551151024433",  // MHLAB (URIT) — Clínica Animais
+    ...(process.env.BOT_BLOCKED_PHONES ?? "").split(","),
+  ]
+    .map((s) => s.replace(/\D/g, ""))
+    .filter(Boolean)
+);
+
+function isBlockedPhone(phone: string): boolean {
+  return BLOCKED_PHONES.has(phone.replace(/\D/g, ""));
+}
+
 // Padrões de resposta automática (URA/robô de clínica): o bot NÃO deve
 // conversar com outro robô — registra a mensagem e fica em silêncio.
 const AUTO_REPLY_PATTERNS: RegExp[] = [
@@ -102,6 +125,9 @@ export async function POST(request: NextRequest) {
     const resolved = await fetchContactByLid(jid);
     if (resolved) phone = resolved.replace("@s.whatsapp.net", "");
   }
+
+  // Números bloqueados: o bot sai da frente por completo — nem registra.
+  if (isBlockedPhone(phone)) return NextResponse.json({ received: true });
 
   const pushName = (msgData.pushName as string | null) ?? null;
   const messageText = extractText(msgData.message as Record<string, unknown> | undefined);
@@ -219,17 +245,19 @@ async function processInbound(params: {
   // Registra a mensagem recebida.
   await insertMessage({ conversationId: conversation.id, direction: "inbound", content: messageText, sentBy: "client", externalId });
 
-  // Conversa em atendimento humano: o bot fica em silêncio ENQUANTO o humano
-  // estiver presente. Se ninguém do nosso lado (humano ou bot) escreve há mais
-  // de HUMAN_IDLE_TAKEOVER_MINUTES (default 60), o bot reassume — evita
-  // prospect falando sozinho porque o consultor esqueceu a conversa.
+  // Conversa em atendimento humano: o bot fica em silêncio. PONTO.
+  // O "reassumir após 60min de inatividade" foi DESLIGADO por ordem do
+  // Diretor (incidente 27/07: o bot atropelou negociações conduzidas por
+  // humano — Clínica Animais e VFP — e queimou prospect). Reassumir agora é
+  // opt-in explícito: só se HUMAN_IDLE_TAKEOVER_MINUTES for definido > 0.
   if (conversation.status === "human") {
-    const idleMinutes = parseInt(process.env.HUMAN_IDLE_TAKEOVER_MINUTES ?? "60", 10);
+    const idleMinutes = parseInt(process.env.HUMAN_IDLE_TAKEOVER_MINUTES ?? "0", 10);
+    if (!Number.isFinite(idleMinutes) || idleMinutes <= 0) return;
     const lastOutboundAt = await getLastOutboundAt(conversation.id);
     const humanActive = lastOutboundAt && Date.now() - lastOutboundAt.getTime() < idleMinutes * 60_000;
     if (humanActive) return;
     await setConversationStatus(conversation.id, "bot");
-    console.log(`[sales-webhook] humano inativo há +${idleMinutes}min — bot reassumiu a conversa`);
+    console.log(`[sales-webhook] humano inativo há +${idleMinutes}min — bot reassumiu a conversa (opt-in via env)`);
   }
 
   // Resposta automática de robô/URA da clínica: registra, mas não responde.
@@ -250,8 +278,6 @@ async function processInbound(params: {
     return;
   }
 
-  await insertMessage({ conversationId: conversation.id, direction: "outbound", content: result.reply, sentBy: "bot" });
-
   // Erros transitórios da API (Claude sem crédito ou instabilidade) NÃO transferem
   // para humano — bot tenta novamente na próxima mensagem.
   const isTransientError =
@@ -259,6 +285,12 @@ async function processInbound(params: {
   if (result.handoff && !isTransientError) {
     await setConversationStatus(conversation.id, "human");
   }
+
+  // Resposta vazia = o agente decidiu ficar em silêncio (incerteza/erro).
+  // Nunca enviar string vazia nem placeholder.
+  if (!result.reply.trim()) return;
+
+  await insertMessage({ conversationId: conversation.id, direction: "outbound", content: result.reply, sentBy: "bot" });
 
   const ok = await safeSend(phone, result.reply);
   if (!ok) await setConversationStatus(conversation.id, "human");

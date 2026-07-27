@@ -127,8 +127,11 @@ export async function runSalesAgent(params: {
       const msg = err instanceof Error ? err.message : String(err);
       const isCredits = msg.includes("credit balance") || msg.includes("insufficient_quota");
       console.error("[sales-agent] erro Anthropic:", isCredits ? `sem créditos (fallback=${hasFallbackKey()})` : msg);
+      // Silêncio: mandar "instabilidade técnica" repetido já queimou prospect
+      // (incidente 27/07 — 5 mensagens duplicadas). Erro transitório = não
+      // responde nada; o webhook não envia reply vazio.
       return {
-        reply: "Tive uma instabilidade técnica agora há pouco. Já vou pedir para um consultor da Sysmax te chamar, tudo bem?",
+        reply: "",
         handoff: true,
         handoffReason: isCredits ? "anthropic_no_credits" : "anthropic_error",
       };
@@ -146,7 +149,10 @@ export async function runSalesAgent(params: {
     if (response.stop_reason === "end_turn") {
       const textBlock = response.content.find((b) => b.type === "text");
       const reply = textBlock?.type === "text" ? textBlock.text.trim() : "";
-      return { reply: reply || "Desculpe, pode repetir?", handoff: false, stageChanged };
+      // Resposta vazia do modelo = incerteza. NUNCA mandar "Desculpe, pode
+      // repetir?" (incidente VFP 27/07 — perdeu o prospect). Silêncio + humano.
+      if (!reply) return { reply: "", handoff: true, handoffReason: "empty_reply", stageChanged };
+      return { reply, handoff: false, stageChanged };
     }
 
     if (response.stop_reason === "tool_use") {
@@ -196,5 +202,7 @@ export async function runSalesAgent(params: {
     break;
   }
 
-  return { reply: "Desculpe, não consegui processar agora. Pode reformular?", handoff: false, stageChanged };
+  // Loop esgotado sem resposta útil: silêncio + transferir para humano em vez
+  // de resposta burra que queima o prospect.
+  return { reply: "", handoff: true, handoffReason: "agent_loop_exhausted", stageChanged };
 }
