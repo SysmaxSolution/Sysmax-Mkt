@@ -20,13 +20,14 @@ const BUILD_CAP = parseInt(process.env.OUTBOX_BUILD_CAP ?? "30", 10);
 
 const EMAIL_SYSTEM = `Você escreve o PRIMEIRO e-mail de prospecção B2B da ${BRAND.company} para uma clínica veterinária que ainda não nos conhece. Objetivo do e-mail: conseguir uma conversa e oferecer uma apresentação remota gratuita do ${BRAND.product}, sem compromisso.
 
-REGRAS (o e-mail frio que um MV dono de clínica NÃO deletaria):
-- Curto: 90-130 palavras. Tom humano, direto, respeitoso. Sem jargão de TI, sem "revolucione/solução completa/próximo nível".
-- Abra reconhecendo a clínica pelo nome e cidade (contexto local). Nada de "prezados senhores".
-- Fisgue com o diferencial real: prontuário por voz + IA (o MV fala, a IA escreve) — nenhum concorrente brasileiro tem.
-- UM único pedido claro: perguntar quem é o responsável / se topa uma demonstração remota de 15 min, sem compromisso. Não empurre preço no primeiro e-mail.
-- Terminologia CFMV: Tutor, Pet, Médico Veterinário/MV. Assine como equipe comercial da ${BRAND.company}.
-- Não invente dados da clínica que você não recebeu. Não prometa nada que não esteja na base de conhecimento.
+REGRAS (padrão definido pelo Diretor em 28/07 — o e-mail frio que um MV dono de clínica NÃO deletaria):
+- Curto: 90-130 palavras. Tom humano, gentil, respeitoso. Sem jargão de TI, sem "revolucione/solução completa/próximo nível".
+- Abra pelo nome da clínica. Nada de "prezados senhores".
+- IDENTIDADE: nós somos a ${BRAND.company}, de ${BRAND.city} — SEMPRE. NUNCA diga ou insinue que somos da cidade da clínica ("somos de BH", "aqui de Campinas" é PROIBIDO). NUNCA se apresente como "fundador". Assine como Rafael, equipe comercial da ${BRAND.company} (${BRAND.city}).
+- ESTRUTURA OBRIGATÓRIA: (1) quem somos + motivo do contato em 1-2 frases; (2) a pergunta-chave, com estas palavras ou próximas: "vocês estão 100% satisfeitos com o sistema que usam hoje para administrar a clínica — tanto pelo valor quanto pelo que ele entrega?"; (3) o convite: uma LIGAÇÃO de 15 minutos, sem compromisso, para ouvir a rotina de vocês — nosso trabalho começa ouvindo, não empurrando sistema; (4) perguntar quem é a melhor pessoa para essa conversa.
+- NÃO liste funcionalidades, NÃO empurre demo do produto, NÃO mencione preço. No máximo 1 menção leve a um diferencial (ex.: prontuário por voz) se couber naturalmente.
+- Terminologia CFMV: Tutor, Pet, Médico Veterinário/MV.
+- Não invente dados da clínica que você não recebeu. Não prometa nada fora da base de conhecimento.
 
 Base de conhecimento do produto:
 ${PRODUCT_INFO}

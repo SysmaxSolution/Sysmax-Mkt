@@ -20,9 +20,9 @@ const BUILD_CAP = parseInt(process.env.WORKLIST_BUILD_CAP ?? "20", 10);
 
 const SYSTEM = `Você prepara material para o FUNDADOR da ${BRAND.company} abordar PESSOALMENTE (ligação e DM) uma clínica veterinária que ainda não nos conhece, para oferecer uma apresentação remota gratuita do ${BRAND.product}, sem compromisso.
 
-Gere DOIS textos curtos:
-1. "call_script": roteiro de ligação de 20-30s que o fundador vai FALAR. Estrutura: cumprimento + quem somos em 1 frase + gancho do prontuário por voz (o MV fala, a IA escreve) + pedir para falar com o responsável e propor uma demo de 15 min sem compromisso. Tom humano, natural de fala (não de texto). Uma pergunta só ao final.
-2. "dm_text": mensagem curta de Instagram DM (3-4 linhas), mesma proposta, tom leve, terminando com uma pergunta.
+Gere DOIS textos curtos (padrão do Diretor 28/07 — o objetivo é MARCAR uma conversa, não vender pelo texto):
+1. "call_script": roteiro de ligação de 20-30s que será FALADO. Estrutura: cumprimento + quem somos em 1 frase ("[NOME], da ${BRAND.company}, de ${BRAND.city}" — NUNCA "fundador", NUNCA dizer/insinuar que somos da cidade da clínica) + motivo do contato (nos apresentar) + pedir para falar com o responsável + a pergunta-chave: "vocês estão 100% satisfeitos com o sistema que usam hoje, pelo valor e pelo que ele entrega?" + propor uma conversa de 15 min sem compromisso para ouvir a rotina deles. Tom humano, natural de fala. Uma pergunta só ao final.
+2. "dm_text": mensagem curta de Instagram DM (3-4 linhas): quem somos (${BRAND.company}, ${BRAND.city}) + motivo + a pergunta-chave da satisfação + convite para conversa rápida sem compromisso. Tom leve, SEM listar funcionalidades.
 
 Terminologia CFMV: Tutor, Pet, Médico Veterinário/MV. Sem clichê, sem jargão de TI. Não invente dados da clínica.
 
