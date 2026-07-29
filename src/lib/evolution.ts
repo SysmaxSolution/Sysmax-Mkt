@@ -59,6 +59,27 @@ export async function sendText(phone: string, message: string): Promise<void> {
   }
 }
 
+// Envia um documento (ex.: one-pager PDF) no chat. media = base64 puro.
+export async function sendDocument(phone: string, mediaBase64: string, fileName: string): Promise<void> {
+  await throttle();
+  const c = creds();
+  const res = await fetch(`${c.apiUrl}/message/sendMedia/${c.instanceId}`, {
+    method: "POST",
+    headers: headers(c.apiKey),
+    body: JSON.stringify({
+      number: formatPhone(phone),
+      mediatype: "document",
+      mimetype: "application/pdf",
+      media: mediaBase64,
+      fileName,
+    }),
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`Evolution sendMedia ${res.status}: ${t}`);
+  }
+}
+
 // Resolve um JID @lid para o numero real via cache de contatos da instancia.
 export async function fetchContactByLid(lidJid: string): Promise<string | null> {
   const c = creds();

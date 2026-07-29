@@ -99,6 +99,37 @@ Se não quiser mais receber, cancele aqui: ${unsubUrl}`;
   return { skipped: false, id: data.id ?? "" };
 }
 
+// E-mail SOLICITADO pelo lead ("manda por e-mail"): não é cold outreach — o
+// pedido explícito é o consentimento. Sem footer de unsubscribe, com anexos
+// (one-pager). Reply-To aponta para a inbox real do fundador.
+export async function sendSolicitedEmail(args: {
+  to: string;
+  subject: string;
+  text: string;
+  attachments?: Array<{ filename: string; content: string }>; // content = base64
+}): Promise<string> {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.MAIL_FROM;
+  if (!apiKey || !from) throw new Error("RESEND_API_KEY e MAIL_FROM são obrigatórios.");
+  const payload: Record<string, unknown> = {
+    from,
+    to: [args.to],
+    subject: args.subject,
+    text: args.text,
+  };
+  if (args.attachments?.length) payload.attachments = args.attachments;
+  const replyTo = process.env.MAIL_REPLY_TO;
+  if (replyTo) payload.reply_to = replyTo;
+  const res = await fetch(RESEND_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`Resend ${res.status}: ${await res.text().catch(() => "")}`);
+  const data = (await res.json().catch(() => ({}))) as { id?: string };
+  return data.id ?? "";
+}
+
 // E-mail INTERNO (digest ao fundador). Não é cold outreach: sem footer de
 // unsubscribe, sem checagem de suppression. Usa o mesmo remetente (MAIL_FROM).
 export async function sendInternalEmail(args: { to: string; subject: string; text: string }): Promise<string> {

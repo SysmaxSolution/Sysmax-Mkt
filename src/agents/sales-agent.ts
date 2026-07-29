@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createMessageWithFallback, hasFallbackKey, SALES_MODEL } from "@/lib/anthropic";
 import { PRODUCT_INFO, SALES_SYSTEM_PROMPT } from "@/lib/brand";
+import { sendPresentationPackage } from "@/lib/presentation";
 import { getLatestPlaybook, playbookBlock } from "@/lib/playbook";
 import {
   getRecentHistory,
@@ -54,6 +55,16 @@ const TOOLS: Anthropic.Tool[] = [
         notes: { type: "string", description: "Observações (opcional)" },
       },
       required: ["date", "time"],
+    },
+  },
+  {
+    name: "send_presentation_email",
+    description:
+      "Use IMEDIATAMENTE quando o lead pedir a apresentação/proposta por e-mail. O sistema envia o e-mail com o PDF institucional, manda a confirmação no WhatsApp e o mesmo PDF no chat — tudo automático. Você NÃO precisa escrever nada depois. Se o lead ainda não informou o endereço, pergunte o e-mail antes de chamar esta ferramenta.",
+    input_schema: {
+      type: "object" as const,
+      properties: { email: { type: "string", description: "Endereço de e-mail informado pelo lead" } },
+      required: ["email"],
     },
   },
   {
@@ -138,6 +149,20 @@ export async function runSalesAgent(params: {
     }
 
     const toolUses = response.content.filter((b) => b.type === "tool_use");
+
+    // Pacote "mande por e-mail": determinístico e encerra o loop. O próprio
+    // sendPresentationPackage envia a confirmação FIXA no WhatsApp (palavras
+    // do Diretor) + PDF + e-mail; devolvemos reply vazio SEM handoff para o
+    // webhook não enviar nada por cima.
+    const presBlock = toolUses.find((b) => b.type === "tool_use" && b.name === "send_presentation_email");
+    if (presBlock && presBlock.type === "tool_use") {
+      const email = String((presBlock.input as { email?: string }).email ?? "");
+      const sent = await sendPresentationPackage({ lead, email, conversationId });
+      if (sent.ok) return { reply: "", handoff: false, stageChanged: stageChanged ?? "engaged" };
+      console.error("[sales-agent] pacote de apresentação falhou:", sent.error);
+      // Falha no envio: silêncio + humano assume (nunca prometer e não entregar).
+      return { reply: "", handoff: true, handoffReason: `presentation_failed: ${sent.error}`, stageChanged };
+    }
 
     // Handoff explícito encerra o loop.
     const handoffBlock = toolUses.find((b) => b.type === "tool_use" && b.name === "request_human_handoff");
