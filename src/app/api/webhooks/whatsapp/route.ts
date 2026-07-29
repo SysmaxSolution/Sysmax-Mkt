@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sendText, fetchContactByLid } from "@/lib/evolution";
 import { runSalesAgent } from "@/agents/sales-agent";
+import { notifyOwner, reasonLabel } from "@/lib/owner-alert";
 import {
   countRecentBotMessages,
   findOrCreateLeadByPhone,
@@ -280,6 +281,7 @@ async function processInbound(params: {
   if (recentBot >= 6) {
     console.error(`[sales-webhook] ANTI-RAJADA: ${recentBot} respostas do bot em 30min — conversa ${conversation.id} transferida para humano`);
     await setConversationStatus(conversation.id, "human");
+    await notifyOwner(`⚠️ *ASSUMIR CONVERSA — possível loop*\n*${leadLabel(lead, phone)}*\nO bot respondeu ${recentBot}x em 30min e foi silenciado. A conversa está com você.`);
     return;
   }
 
@@ -295,12 +297,22 @@ async function processInbound(params: {
     return;
   }
 
+  // 🔥 Lead quente: o bot fechou uma reunião — o Diretor assume a condução.
+  if (result.demoScheduled) {
+    const { date, time } = result.demoScheduled;
+    const label = new Date(`${date}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit" });
+    await notifyOwner(`🔥 *REUNIÃO AGENDADA PELO BOT*\n*${leadLabel(lead, phone)}*\n📅 ${label} às ${time}\nÚltima msg do cliente: "${clip(messageText)}"\nAssuma a conversa no WhatsApp comercial para confirmar o link.`);
+  }
+
   // Erros transitórios da API (Claude sem crédito ou instabilidade) NÃO transferem
   // para humano — bot tenta novamente na próxima mensagem.
   const isTransientError =
     result.handoffReason === "anthropic_error" || result.handoffReason === "anthropic_no_credits";
   if (result.handoff && !isTransientError) {
     await setConversationStatus(conversation.id, "human");
+    await notifyOwner(`🔴 *ASSUMIR CONVERSA*\n*${leadLabel(lead, phone)}*\nMotivo: ${reasonLabel(result.handoffReason)}\nÚltima msg do cliente: "${clip(messageText)}"\nO bot silenciou — a conversa está com você no WhatsApp comercial.`);
+  } else if (result.handoff && isTransientError) {
+    await notifyOwner(`🟡 *LEAD SEM RESPOSTA (IA instável)*\n*${leadLabel(lead, phone)}*\nMotivo: ${reasonLabel(result.handoffReason)}\nMsg do cliente: "${clip(messageText)}"\nO bot tentará de novo na próxima mensagem — se quiser, assuma antes.`);
   }
 
   // Resposta vazia = o agente decidiu ficar em silêncio (incerteza/erro).
@@ -310,7 +322,19 @@ async function processInbound(params: {
   await insertMessage({ conversationId: conversation.id, direction: "outbound", content: result.reply, sentBy: "bot" });
 
   const ok = await safeSend(phone, result.reply);
-  if (!ok) await setConversationStatus(conversation.id, "human");
+  if (!ok) {
+    await setConversationStatus(conversation.id, "human");
+    await notifyOwner(`🔴 *ASSUMIR CONVERSA*\n*${leadLabel(lead, phone)}*\nMotivo: falha ao ENVIAR a resposta do bot (Evolution). Lead ficou sem retorno.\nÚltima msg do cliente: "${clip(messageText)}"`);
+  }
+}
+
+function leadLabel(lead: { company_name?: string | null; name?: string | null }, phone: string): string {
+  return `${lead.company_name ?? lead.name ?? "Lead sem nome"} · ${phone}`;
+}
+
+function clip(text: string | null | undefined): string {
+  const t = (text ?? "").replace(/\s+/g, " ").trim();
+  return t.length > 180 ? t.slice(0, 180) + "…" : t;
 }
 
 async function safeSend(phone: string, text: string): Promise<boolean> {

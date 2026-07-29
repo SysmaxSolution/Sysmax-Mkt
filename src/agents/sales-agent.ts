@@ -83,6 +83,7 @@ export type SalesResult = {
   handoff: boolean;
   handoffReason?: string;
   stageChanged?: LeadStage;
+  demoScheduled?: { date: string; time: string }; // alerta de lead quente ao dono
 };
 
 function leadContext(lead: Lead): string {
@@ -122,6 +123,7 @@ export async function runSalesAgent(params: {
   const systemPrompt = [SALES_SYSTEM_PROMPT + learned, `Hoje é ${today}.`, leadContext(lead)].join("\n\n");
 
   let stageChanged: LeadStage | undefined;
+  let demoScheduled: { date: string; time: string } | undefined;
   let currentMessages = [...messages];
 
   for (let iter = 0; iter < 5; iter++) {
@@ -161,14 +163,14 @@ export async function runSalesAgent(params: {
       if (sent.ok) return { reply: "", handoff: false, stageChanged: stageChanged ?? "engaged" };
       console.error("[sales-agent] pacote de apresentação falhou:", sent.error);
       // Falha no envio: silêncio + humano assume (nunca prometer e não entregar).
-      return { reply: "", handoff: true, handoffReason: `presentation_failed: ${sent.error}`, stageChanged };
+      return { reply: "", handoff: true, handoffReason: `presentation_failed: ${sent.error}`, stageChanged, demoScheduled };
     }
 
     // Handoff explícito encerra o loop.
     const handoffBlock = toolUses.find((b) => b.type === "tool_use" && b.name === "request_human_handoff");
     if (handoffBlock && handoffBlock.type === "tool_use") {
       const reason = (handoffBlock.input as { reason?: string }).reason ?? "handoff";
-      return { reply: "Perfeito, vou te conectar com um consultor da nossa equipe — em instantes alguém continua por aqui. 😊", handoff: true, handoffReason: reason, stageChanged };
+      return { reply: "Perfeito, vou te conectar com um consultor da nossa equipe — em instantes alguém continua por aqui. 😊", handoff: true, handoffReason: reason, stageChanged, demoScheduled };
     }
 
     if (response.stop_reason === "end_turn") {
@@ -176,8 +178,8 @@ export async function runSalesAgent(params: {
       const reply = textBlock?.type === "text" ? textBlock.text.trim() : "";
       // Resposta vazia do modelo = incerteza. NUNCA mandar "Desculpe, pode
       // repetir?" (incidente VFP 27/07 — perdeu o prospect). Silêncio + humano.
-      if (!reply) return { reply: "", handoff: true, handoffReason: "empty_reply", stageChanged };
-      return { reply, handoff: false, stageChanged };
+      if (!reply) return { reply: "", handoff: true, handoffReason: "empty_reply", stageChanged, demoScheduled };
+      return { reply, handoff: false, stageChanged, demoScheduled };
     }
 
     if (response.stop_reason === "tool_use") {
@@ -209,6 +211,7 @@ export async function runSalesAgent(params: {
           const time = input.time as string;
           await scheduleDemo(lead.id, `${date}T${time}:00`, (input.notes as string | undefined) ?? null);
           stageChanged = "demo";
+          demoScheduled = { date, time };
           const label = new Date(`${date}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
           result = `Demonstração registrada para ${label} às ${time}. Confirme ao lead com simpatia.`;
         }
@@ -229,5 +232,5 @@ export async function runSalesAgent(params: {
 
   // Loop esgotado sem resposta útil: silêncio + transferir para humano em vez
   // de resposta burra que queima o prospect.
-  return { reply: "", handoff: true, handoffReason: "agent_loop_exhausted", stageChanged };
+  return { reply: "", handoff: true, handoffReason: "agent_loop_exhausted", stageChanged, demoScheduled };
 }
