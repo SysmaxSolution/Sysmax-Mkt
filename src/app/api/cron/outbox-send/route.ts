@@ -13,13 +13,15 @@ import { isSuppressed } from "@/lib/suppression";
 // ===========================================================================
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+// 40 e-mails + 15 WA (throttle 1.5s) num run só ≈ 50s — 60s era gargalo.
+export const maxDuration = 120;
 
 const WARMUP_MIN = parseInt(process.env.WARMUP_MIN ?? "20", 10);
 const WARMUP_MAX = parseInt(process.env.WARMUP_MAX ?? "40", 10);
 const WARMUP_STEP = parseInt(process.env.WARMUP_STEP ?? "5", 10);
 const WA_DAILY_CAP = parseInt(process.env.WA_DAILY_CAP ?? "15", 10);
-const SEND_BATCH = parseInt(process.env.OUTBOX_SEND_BATCH ?? "25", 10);
+// Precisa comportar os dois caps diários somados (40 e-mail + 15 WA) num run só.
+const SEND_BATCH = parseInt(process.env.OUTBOX_SEND_BATCH ?? "60", 10);
 
 function startOfTodayUTC(): string {
   const now = new Date();
@@ -62,20 +64,36 @@ export async function GET(req: NextRequest) {
   const emailRemaining = Math.max(0, emailCap - (await sentTodayCount("email")));
   const waRemaining = Math.max(0, WA_DAILY_CAP - (await sentTodayCount("whatsapp")));
 
-  const { data, error } = await salesDb
-    .from("outbox")
-    .select("id,channel,subject,body,lead_id,lead:leads(email,phone,opted_out)")
-    .eq("status", "approved")
-    .in("channel", ["email", "whatsapp"]) // canais automáticos; call/ig_dm são worklist manual
-    .lte("scheduled_for", new Date().toISOString())
-    .order("scheduled_for", { ascending: true })
-    .limit(SEND_BATCH * 2);
-  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+  // Busca POR CANAL: com uma query única ordenada por scheduled_for, uma fila
+  // grande de WhatsApp antigo enche o batch e os e-mails nunca são processados
+  // (starvation observada em 29/07: 226 WA na frente de 174 e-mails).
+  const fetchChannel = async (channel: "email" | "whatsapp", limit: number) => {
+    const { data, error } = await salesDb
+      .from("outbox")
+      .select("id,channel,subject,body,lead_id,lead:leads(email,phone,opted_out)")
+      .eq("status", "approved")
+      .eq("channel", channel) // call/ig_dm são worklist manual
+      .lte("scheduled_for", new Date().toISOString())
+      .order("scheduled_for", { ascending: true })
+      .limit(limit);
+    if (error) throw new Error(error.message);
+    return (data ?? []) as unknown as Row[];
+  };
 
-  const rows = (data ?? []) as unknown as Row[];
+  let rows: Row[];
+  try {
+    rows = [
+      ...(await fetchChannel("email", Math.min(SEND_BATCH, emailRemaining + 5))),
+      ...(await fetchChannel("whatsapp", Math.min(SEND_BATCH, waRemaining + 5))),
+    ];
+  } catch (e) {
+    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 });
+  }
   let emailsSent = 0, waSent = 0, skipped = 0, failed = 0, processed = 0;
 
   for (const row of rows) {
+    // teto de segurança por invocação; os caps diários por canal já limitam o
+    // grosso (fetch é waRemaining/emailRemaining + folga p/ linhas inválidas)
     if (processed >= SEND_BATCH) break;
     const lead = row.lead;
     if (!lead || lead.opted_out) { await mark(row.id, "failed", "lead opted_out/ausente"); skipped++; continue; }
