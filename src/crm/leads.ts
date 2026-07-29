@@ -124,14 +124,18 @@ export async function getActiveConversationByPhone(
 type Direction = "inbound" | "outbound";
 type SentBy = "bot" | "human" | "client";
 
+// Retorna false quando a mensagem é DUPLICATA (unique 23505 em channel+
+// external_id): a Evolution reentrega o mesmo messages.upsert quando o webhook
+// demora, e sem esse sinal o agente processava o mesmo evento em loop
+// (incidente DogFel 29/07: 17 respostas em 3 minutos).
 export async function insertMessage(params: {
   conversationId: string;
   direction: Direction;
   content: string;
   sentBy: SentBy;
   externalId?: string | null;
-}): Promise<void> {
-  await salesDb.from("messages").insert({
+}): Promise<boolean> {
+  const { error } = await salesDb.from("messages").insert({
     conversation_id: params.conversationId,
     direction: params.direction,
     channel: "whatsapp",
@@ -139,7 +143,25 @@ export async function insertMessage(params: {
     sent_by: params.sentBy,
     external_id: params.externalId ?? null,
   });
+  if (error) {
+    if (error.code === "23505") return false; // entrega duplicada — não processar
+    console.error("[crm] insertMessage falhou:", error.message);
+    return true; // falha de infra não pode calar o bot — segue o fluxo
+  }
   await salesDb.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", params.conversationId);
+  return true;
+}
+
+// Conta respostas do BOT na conversa desde `sinceMs` atrás — guarda-corpo
+// anti-rajada: nenhum fluxo legítimo tem o bot falando muitas vezes seguidas.
+export async function countRecentBotMessages(conversationId: string, sinceMs: number): Promise<number> {
+  const { count } = await salesDb
+    .from("messages")
+    .select("id", { count: "exact", head: true })
+    .eq("conversation_id", conversationId)
+    .eq("sent_by", "bot")
+    .gte("created_at", new Date(Date.now() - sinceMs).toISOString());
+  return count ?? 0;
 }
 
 // Normaliza texto para comparação de eco: unicode NFKC, remove TODO

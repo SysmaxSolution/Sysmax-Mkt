@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { sendText, fetchContactByLid } from "@/lib/evolution";
 import { runSalesAgent } from "@/agents/sales-agent";
 import {
+  countRecentBotMessages,
   findOrCreateLeadByPhone,
   getOrCreateConversation,
   getActiveConversationByPhone,
@@ -242,8 +243,14 @@ async function processInbound(params: {
   const conversation = await getOrCreateConversation(lead.id);
   if (!conversation) return;
 
-  // Registra a mensagem recebida.
-  await insertMessage({ conversationId: conversation.id, direction: "inbound", content: messageText, sentBy: "client", externalId });
+  // Registra a mensagem recebida. Se for reentrega do MESMO evento (a Evolution
+  // repete o messages.upsert quando o webhook demora a responder), aborta aqui —
+  // processar de novo era o loop do incidente DogFel 29/07.
+  const fresh = await insertMessage({ conversationId: conversation.id, direction: "inbound", content: messageText, sentBy: "client", externalId });
+  if (!fresh) {
+    console.log("[sales-webhook] evento duplicado ignorado (external_id já processado):", externalId);
+    return;
+  }
 
   // Conversa em atendimento humano: o bot fica em silêncio. PONTO.
   // O "reassumir após 60min de inatividade" foi DESLIGADO por ordem do
@@ -263,6 +270,16 @@ async function processInbound(params: {
   // Resposta automática de robô/URA da clínica: registra, mas não responde.
   if (looksLikeAutoReply(messageText)) {
     console.log("[sales-webhook] mensagem automática detectada — bot não responde:", messageText.slice(0, 80));
+    return;
+  }
+
+  // Guarda-corpo anti-rajada: se o bot já falou 6+ vezes em 30min nesta
+  // conversa, algo está errado (loop, robô do outro lado) — silencia e
+  // transfere para humano em vez de continuar metralhando o prospect.
+  const recentBot = await countRecentBotMessages(conversation.id, 30 * 60_000);
+  if (recentBot >= 6) {
+    console.error(`[sales-webhook] ANTI-RAJADA: ${recentBot} respostas do bot em 30min — conversa ${conversation.id} transferida para humano`);
+    await setConversationStatus(conversation.id, "human");
     return;
   }
 
