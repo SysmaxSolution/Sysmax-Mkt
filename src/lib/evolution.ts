@@ -5,10 +5,14 @@
 
 type Creds = { apiUrl: string; instanceId: string; apiKey: string };
 
+// BOM (U+FEFF) colado em env var derruba o fetch com "Cannot convert argument
+// to a ByteString" — 40 envios da leva de 28/07 falharam assim. Sanitizar sempre.
+const cleanEnv = (v: string | undefined) => v?.replace(/^﻿/, "").trim() || undefined;
+
 function creds(): Creds {
-  const apiUrl = process.env.EVOLUTION_API_URL;
-  const apiKey = process.env.EVOLUTION_API_KEY;
-  const instanceId = process.env.EVOLUTION_COMMERCIAL_INSTANCE ?? "sysmax-comercial";
+  const apiUrl = cleanEnv(process.env.EVOLUTION_API_URL);
+  const apiKey = cleanEnv(process.env.EVOLUTION_API_KEY);
+  const instanceId = cleanEnv(process.env.EVOLUTION_COMMERCIAL_INSTANCE) ?? "sysmax-comercial";
   if (!apiUrl || !apiKey) throw new Error("EVOLUTION_API_URL/KEY ausentes no ambiente.");
   return { apiUrl, apiKey, instanceId };
 }
