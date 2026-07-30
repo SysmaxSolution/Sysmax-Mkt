@@ -80,10 +80,14 @@ const AUTO_REPLY_PATTERNS: RegExp[] = [
   /aguarde\s+(um\s+momento|um\s+instante|que\s+em\s+breve)/i,
   /protocolo\s+(de\s+atendimento|n[uú]mero)/i,
   /este\s+(canal|n[uú]mero)\s+n[aã]o\s+[eé]\s+monitorado/i,
+  /n[aã]o\s+entendi\.?\s+(digite|escolha|selecione)/i,
 ];
 
 function looksLikeAutoReply(text: string): boolean {
-  return AUTO_REPLY_PATTERNS.some((re) => re.test(text));
+  // URAs formatam com markdown do WhatsApp ("Digite o *número*") — remover
+  // antes de casar os padrões (incidente Vet Center 30/07: 6 respostas a menu).
+  const plain = text.replace(/[*_~]/g, "");
+  return AUTO_REPLY_PATTERNS.some((re) => re.test(plain));
 }
 
 function extractText(msgObj: Record<string, unknown> | undefined): string | null {

@@ -198,9 +198,16 @@ export async function runSalesAgent(params: {
 
     if (response.stop_reason === "end_turn") {
       const textBlock = response.content.find((b) => b.type === "text");
-      const reply = textBlock?.type === "text" ? textBlock.text.trim() : "";
+      let reply = textBlock?.type === "text" ? textBlock.text.trim() : "";
+      // O modelo às vezes "sinaliza silêncio" com placeholder — e isso ia como
+      // mensagem real ao cliente ("*(aguardando)*", 3x em 30/07). Placeholder =
+      // silêncio de verdade, sem handoff.
+      const isPlaceholder =
+        reply.length > 0 &&
+        (/^[\s*_(\[]*\(?\s*(sil[êe]ncio|aguardando|sem\s+resposta|no[- ]?reply)/i.test(reply) || /^[.…\s*_]+$/.test(reply));
+      if (isPlaceholder) return { reply: "", handoff: false, stageChanged, demoScheduled }; // silêncio deliberado
       // Resposta vazia do modelo = incerteza. NUNCA mandar "Desculpe, pode
-      // repetir?" (incidente VFP 27/07 — perdeu o prospect). Silêncio + humano.
+      // repetir?" (incidente VFP 27/07 — perdeu o prospecto). Silêncio + humano.
       if (!reply) return { reply: "", handoff: true, handoffReason: "empty_reply", stageChanged, demoScheduled };
       return { reply, handoff: false, stageChanged, demoScheduled };
     }
