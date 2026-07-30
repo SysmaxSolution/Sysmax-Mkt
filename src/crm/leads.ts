@@ -276,3 +276,40 @@ export async function scheduleDemo(leadId: string, scheduledAt: string, notes: s
   await salesDb.from("demos").insert({ lead_id: leadId, scheduled_at: scheduledAt, notes, status: "scheduled" });
   await moveStage(leadId, "demo");
 }
+
+// Consciência de agenda (ordem do Diretor 30/07): reuniões são conduzidas por
+// UMA pessoa — dois agendamentos próximos colidem. Janela em minutos p/ cada lado.
+export async function findDemoConflict(
+  scheduledAt: string,
+  windowMinutes: number
+): Promise<{ scheduled_at: string; company: string | null } | null> {
+  const t = Date.parse(scheduledAt);
+  if (Number.isNaN(t)) return null;
+  const from = new Date(t - windowMinutes * 60_000).toISOString();
+  const to = new Date(t + windowMinutes * 60_000).toISOString();
+  const { data } = await salesDb
+    .from("demos")
+    .select("scheduled_at, lead:leads(company_name,name)")
+    .eq("status", "scheduled")
+    .gte("scheduled_at", from)
+    .lte("scheduled_at", to)
+    .limit(1);
+  const row = (data ?? [])[0] as unknown as { scheduled_at: string; lead: { company_name: string | null; name: string | null } | null } | undefined;
+  if (!row) return null;
+  return { scheduled_at: row.scheduled_at, company: row.lead?.company_name ?? row.lead?.name ?? null };
+}
+
+// Próximos compromissos (para o prompt do agente saber os horários ocupados).
+export async function listUpcomingDemos(limit = 10): Promise<Array<{ scheduled_at: string; company: string | null }>> {
+  const { data } = await salesDb
+    .from("demos")
+    .select("scheduled_at, lead:leads(company_name,name)")
+    .eq("status", "scheduled")
+    .gte("scheduled_at", new Date(Date.now() - 60 * 60_000).toISOString())
+    .order("scheduled_at", { ascending: true })
+    .limit(limit);
+  return ((data ?? []) as unknown as Array<{ scheduled_at: string; lead: { company_name: string | null; name: string | null } | null }>).map((d) => ({
+    scheduled_at: d.scheduled_at,
+    company: d.lead?.company_name ?? d.lead?.name ?? null,
+  }));
+}

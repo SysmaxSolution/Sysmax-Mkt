@@ -4,10 +4,12 @@ import { PRODUCT_INFO, SALES_SYSTEM_PROMPT } from "@/lib/brand";
 import { sendPresentationPackage } from "@/lib/presentation";
 import { getLatestPlaybook, playbookBlock } from "@/lib/playbook";
 import {
+  findDemoConflict,
   getRecentHistory,
-  updateLeadProfile,
+  listUpcomingDemos,
   moveStage,
   scheduleDemo,
+  updateLeadProfile,
   type Lead,
   type LeadStage,
 } from "@/crm/leads";
@@ -86,6 +88,17 @@ export type SalesResult = {
   demoScheduled?: { date: string; time: string }; // alerta de lead quente ao dono
 };
 
+// "2026-07-31T09:30:00+00:00" → "sexta-feira 31/07 às 09:30". O horário é
+// gravado como HORA DE PAREDE (o bot combina em horário local do lead) — nunca
+// converter timezone aqui, só fatiar a string.
+function slotLabel(scheduledAt: string): string {
+  const [d, rest] = scheduledAt.split("T");
+  const hm = (rest ?? "").slice(0, 5);
+  const weekday = new Date(`${d}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "long" });
+  const [, m, day] = d.split("-");
+  return `${weekday} ${day}/${m} às ${hm}`;
+}
+
 function leadContext(lead: Lead): string {
   const known: string[] = [];
   if (lead.name) known.push(`Nome: ${lead.name}`);
@@ -120,7 +133,17 @@ export async function runSalesAgent(params: {
   });
   // Diretrizes aprendidas das conversas reais (cron prompt-learning).
   const learned = playbookBlock(await getLatestPlaybook());
-  const systemPrompt = [SALES_SYSTEM_PROMPT + learned, `Hoje é ${today}.`, leadContext(lead)].join("\n\n");
+  // Agenda ocupada: o Diretor conduz as reuniões pessoalmente — o bot não pode
+  // propor nem aceitar horário que colida com compromisso já marcado.
+  const upcoming = await listUpcomingDemos(10);
+  const agendaBlock = upcoming.length
+    ? `AGENDA — HORÁRIOS JÁ OCUPADOS (reuniões são conduzidas pelo nosso diretor; NUNCA proponha nem aceite horário a menos de 1h destes — ofereça alternativa próxima):\n${upcoming
+        .map((d) => `- ${slotLabel(d.scheduled_at)}${d.company ? ` (${d.company})` : ""}`)
+        .join("\n")}`
+    : "";
+  const systemPrompt = [SALES_SYSTEM_PROMPT + learned, `Hoje é ${today}.`, agendaBlock, leadContext(lead)]
+    .filter(Boolean)
+    .join("\n\n");
 
   let stageChanged: LeadStage | undefined;
   let demoScheduled: { date: string; time: string } | undefined;
@@ -209,11 +232,18 @@ export async function runSalesAgent(params: {
         } else if (block.name === "schedule_demo") {
           const date = input.date as string;
           const time = input.time as string;
-          await scheduleDemo(lead.id, `${date}T${time}:00`, (input.notes as string | undefined) ?? null);
-          stageChanged = "demo";
-          demoScheduled = { date, time };
           const label = new Date(`${date}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
-          result = `Demonstração registrada para ${label} às ${time}. Confirme ao lead com simpatia.`;
+          // Trava de conflito (Diretor 30/07): reuniões são dele — nada de dois
+          // compromissos na mesma janela. ±45min cobre reunião de 15-30min + folga.
+          const conflict = await findDemoConflict(`${date}T${time}:00`, 45);
+          if (conflict) {
+            result = `⚠️ CONFLITO DE AGENDA: já existe reunião marcada em ${slotLabel(conflict.scheduled_at)}${conflict.company ? ` com ${conflict.company}` : ""}. NÃO confirme ${label} às ${time}. Peça desculpas pelo horário indisponível e ofereça 2 alternativas concretas fora dessa janela (ex.: 1h30 depois, ou outro período do mesmo dia / dia seguinte). Só chame schedule_demo de novo com o horário novo combinado.`;
+          } else {
+            await scheduleDemo(lead.id, `${date}T${time}:00`, (input.notes as string | undefined) ?? null);
+            stageChanged = "demo";
+            demoScheduled = { date, time };
+            result = `Demonstração registrada para ${label} às ${time}. Confirme ao lead com simpatia.`;
+          }
         }
 
         toolResults.push({ type: "tool_result", tool_use_id: block.id, content: result });
