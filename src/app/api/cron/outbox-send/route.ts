@@ -20,6 +20,9 @@ const WARMUP_MIN = parseInt(process.env.WARMUP_MIN ?? "20", 10);
 const WARMUP_MAX = parseInt(process.env.WARMUP_MAX ?? "40", 10);
 const WARMUP_STEP = parseInt(process.env.WARMUP_STEP ?? "5", 10);
 const WA_DAILY_CAP = parseInt(process.env.WA_DAILY_CAP ?? "15", 10);
+// Cap POR EXECUÇÃO (Diretor 31/07): 2 disparos/dia (11h e 17h BRT) de até
+// WA_RUN_CAP cada — divide o volume diário e parece mais humano.
+const WA_RUN_CAP = parseInt(process.env.WA_RUN_CAP ?? "15", 10);
 // Precisa comportar os dois caps diários somados (40 e-mail + 15 WA) num run só.
 const SEND_BATCH = parseInt(process.env.OUTBOX_SEND_BATCH ?? "60", 10);
 
@@ -62,7 +65,7 @@ export async function GET(req: NextRequest) {
 
   const emailCap = emailCapToday();
   const emailRemaining = Math.max(0, emailCap - (await sentTodayCount("email")));
-  const waRemaining = Math.max(0, WA_DAILY_CAP - (await sentTodayCount("whatsapp")));
+  const waRemaining = Math.min(WA_RUN_CAP, Math.max(0, WA_DAILY_CAP - (await sentTodayCount("whatsapp"))));
 
   // Busca POR CANAL: com uma query única ordenada por scheduled_for, uma fila
   // grande de WhatsApp antigo enche o batch e os e-mails nunca são processados
