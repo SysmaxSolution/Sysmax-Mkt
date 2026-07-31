@@ -19,6 +19,13 @@ import { isSuppressed } from "@/lib/suppression";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 
+// BOM (U+FEFF) colado em env var derruba o fetch ("ByteString... index 7" =
+// Authorization: Bearer <BOM>key — incidente 31/07, 45 e-mails falharam).
+// Mesma blindagem já aplicada ao cliente Evolution. Sanitizar SEMPRE.
+const cleanEnv = (v: string | undefined) => v?.replace(/^﻿/, "").trim() || undefined;
+const resendKey = () => cleanEnv(process.env.RESEND_API_KEY);
+const mailFrom = () => cleanEnv(process.env.MAIL_FROM);
+
 function unsubSecret(): string {
   const s = process.env.UNSUBSCRIBE_SECRET ?? process.env.ADMIN_TOKEN;
   if (!s) throw new Error("UNSUBSCRIBE_SECRET (ou ADMIN_TOKEN) ausente — necessário p/ assinar o opt-out.");
@@ -60,8 +67,8 @@ export async function sendEmail(args: {
     return { skipped: true, reason: "suppressed" };
   }
 
-  const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.MAIL_FROM;
+  const apiKey = resendKey();
+  const from = mailFrom();
   if (!apiKey || !from) {
     throw new Error("RESEND_API_KEY e MAIL_FROM são obrigatórios para enviar e-mail.");
   }
@@ -108,8 +115,8 @@ export async function sendSolicitedEmail(args: {
   text: string;
   attachments?: Array<{ filename: string; content: string }>; // content = base64
 }): Promise<string> {
-  const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.MAIL_FROM;
+  const apiKey = resendKey();
+  const from = mailFrom();
   if (!apiKey || !from) throw new Error("RESEND_API_KEY e MAIL_FROM são obrigatórios.");
   const payload: Record<string, unknown> = {
     from,
@@ -133,8 +140,8 @@ export async function sendSolicitedEmail(args: {
 // E-mail INTERNO (digest ao fundador). Não é cold outreach: sem footer de
 // unsubscribe, sem checagem de suppression. Usa o mesmo remetente (MAIL_FROM).
 export async function sendInternalEmail(args: { to: string; subject: string; text: string }): Promise<string> {
-  const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.MAIL_FROM;
+  const apiKey = resendKey();
+  const from = mailFrom();
   if (!apiKey || !from) throw new Error("RESEND_API_KEY e MAIL_FROM são obrigatórios.");
   const res = await fetch(RESEND_ENDPOINT, {
     method: "POST",
