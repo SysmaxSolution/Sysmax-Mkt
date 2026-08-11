@@ -11,7 +11,8 @@ export const BRAND = {
   commercialPhone: process.env.SYSMAX_COMMERCIAL_PHONE ?? "5516997253250",
   commercialPhone2: process.env.SYSMAX_COMMERCIAL_PHONE_2 ?? "5516997023340",
   // E-mail para recebimento de informações, documentos e demandas.
-  commercialEmail: process.env.SYSMAX_COMMERCIAL_EMAIL ?? "comercial@sysmaxsolutions.com",
+  // 11/08: Workspace perdido — comercial@ está MORTO; tudo cai no sysmax@.
+  commercialEmail: process.env.SYSMAX_COMMERCIAL_EMAIL ?? "sysmax@sysmaxsolutions.com",
 };
 
 // Base de conhecimento entregue ao agente via tool get_product_info.

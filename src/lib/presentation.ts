@@ -64,6 +64,19 @@ export async function sendPresentationPackage(params: {
   const to = email.trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return { ok: false, error: `e-mail inválido: ${email}` };
 
+  // Anti-duplicação (incidente VITA 05/08: e-mail + nome chegaram em mensagens
+  // separadas → o agente rodou 2x e o pacote foi DUAS vezes). Se já enviamos
+  // e-mail a este lead nas últimas 2h, não repete — só confirma.
+  const { data: recent } = await salesDb
+    .from("outbox")
+    .select("id")
+    .eq("lead_id", lead.id)
+    .eq("channel", "email")
+    .eq("status", "sent")
+    .gte("sent_at", new Date(Date.now() - 2 * 60 * 60_000).toISOString())
+    .limit(1);
+  if (recent && recent.length) return { ok: true }; // já enviado há pouco — silêncio
+
   // 1) baixa o one-pager do próprio deploy (public/)
   const pdfRes = await fetch(pdfUrl());
   if (!pdfRes.ok) return { ok: false, error: `one-pager indisponível (${pdfRes.status})` };
