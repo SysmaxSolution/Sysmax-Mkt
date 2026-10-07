@@ -1,7 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { sendText, fetchContactByLid } from "@/lib/evolution";
 import { runSalesAgent } from "@/agents/sales-agent";
 import { notifyOwner, reasonLabel } from "@/lib/owner-alert";
+import { buildLeadAlert, notifyLeadTeam } from "@/lib/lead-alert";
+import { tagSiteOriginFromWhatsApp } from "@/crm/lead-intake";
 import {
   countRecentBotMessages,
   findOrCreateLeadByPhone,
@@ -244,6 +246,18 @@ async function processInbound(params: {
 
   const lead = await findOrCreateLeadByPhone(phone, pushName);
   if (!lead) return;
+
+  // Veio pelo botão de WhatsApp do site ("Vim pelo site… (ref: x)")? Só
+  // classifica a origem e avisa a equipe — nunca altera o fluxo do bot.
+  try {
+    const siteInfo = await tagSiteOriginFromWhatsApp(phone, messageText, pushName);
+    if (siteInfo) {
+      const alertText = buildLeadAlert(siteInfo);
+      after(() => notifyLeadTeam(alertText));
+    }
+  } catch (err) {
+    console.error("[sales-webhook] falha ao classificar origem do site:", err);
+  }
 
   const conversation = await getOrCreateConversation(lead.id);
   if (!conversation) return;
