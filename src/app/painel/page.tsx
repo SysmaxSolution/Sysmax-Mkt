@@ -53,7 +53,7 @@ export default function PainelPage() {
   const [counts, setCounts] = useState<Record<string, number>>({ email: 0, ig: 0, wa: 0, call: 0 });
   const [filter, setFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [view, setView] = useState<"leads" | "posts">("leads");
+  const [view, setView] = useState<"leads" | "posts" | "site">("leads");
   const [q, setQ] = useState("");
   const [state, setState] = useState<"idle" | "loading" | "authed" | "error">("idle");
   const [note, setNote] = useState("");
@@ -153,9 +153,10 @@ export default function PainelPage() {
         <nav className="topnav">
           <button className={view === "leads" ? "on" : ""} onClick={() => setView("leads")}>Prospectos</button>
           <button className={view === "posts" ? "on" : ""} onClick={() => setView("posts")}>Posts do dia</button>
+          <button className={view === "site" ? "on" : ""} onClick={() => setView("site")}>Leads do site</button>
         </nav>
 
-        {view === "posts" ? <PostsView token={token} /> : (
+        {view === "site" ? <SiteLeadsView token={token} /> : view === "posts" ? <PostsView token={token} /> : (
         <>
         <header className="top">
           <div className="eyebrow">Sysmax Software · Esteira Comercial</div>
@@ -412,6 +413,243 @@ function PostsView({ token }: { token: string }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Aba "Leads do site": quem levantou a mão (formulário, WhatsApp "Vim pelo site")
+// ou criou conta Free no app. Só lista e organiza — o contato é da equipe.
+// ---------------------------------------------------------------------------
+type SiteRow = {
+  leadId: string; name: string | null; clinic: string | null; city: string | null; uf: string | null;
+  phone: string | null; email: string | null; source: string; ref: string | null; stage: string;
+  notes: string | null; createdAt: string; signupAt: string | null; consentAt: string | null; lastContactAt: string | null;
+};
+type SiteStats = {
+  total: number; last7: number; last30: number;
+  bySource: Record<string, number>; byStage: Record<string, number>;
+  byRef: { ref: string; n: number }[]; daily: { date: string; n: number }[];
+};
+
+const SITE_SOURCE_LABEL: Record<string, string> = { site: "Site", cadastro_free: "Conta Free" };
+
+function ago(iso: string): string {
+  const mins = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60000));
+  if (mins < 1) return "agora";
+  if (mins < 60) return `há ${mins} min`;
+  const h = Math.round(mins / 60);
+  if (h < 24) return `há ${h} h`;
+  const d = Math.round(h / 24);
+  return d === 1 ? "há 1 dia" : `há ${d} dias`;
+}
+function whenFmt(iso: string): string {
+  return new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+function waGreeting(r: SiteRow): string {
+  const first = (r.name ?? "").trim().split(/\s+/)[0];
+  const hi = first ? `Olá, ${first}!` : "Olá!";
+  const clinic = r.clinic ? ` da ${r.clinic}` : "";
+  return r.source === "cadastro_free"
+    ? `${hi} Aqui é a equipe da Sysmax. Vi que você${clinic} criou uma conta no SYSVETMAX. Posso te ajudar a começar?`
+    : `${hi} Aqui é a equipe da Sysmax. Vi que você${clinic} pediu informações sobre o SYSVETMAX. Posso te ajudar?`;
+}
+
+function SiteLeadsView({ token }: { token: string }) {
+  const [rows, setRows] = useState<SiteRow[]>([]);
+  const [stats, setStats] = useState<SiteStats | null>(null);
+  const [st, setSt] = useState<"loading" | "ok" | "error">("loading");
+  const [note, setNote] = useState("");
+  const [q, setQ] = useState("");
+  const [srcFilter, setSrcFilter] = useState("all");
+  const [stageFilter, setStageFilter] = useState("all");
+  const [open, setOpen] = useState<Set<string>>(new Set());
+
+  const load = useCallback(async () => {
+    setSt("loading");
+    try {
+      const res = await fetch("/api/painel/site-leads", { headers: { "x-admin-token": token } });
+      if (!res.ok) { setSt("error"); return; }
+      const j = await res.json();
+      if (!j.ok) { setSt("error"); return; }
+      setRows(j.rows ?? []); setStats(j.stats ?? null); setSt("ok");
+    } catch { setSt("error"); }
+  }, [token]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function setStage(leadId: string, stage: string, label: string) {
+    const prevStage = rows.find((r) => r.leadId === leadId)?.stage;
+    setRows((prev) => prev.map((r) => (r.leadId === leadId ? { ...r, stage } : r)));
+    try {
+      const res = await fetch("/api/admin/lead/stage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-token": token },
+        body: JSON.stringify({ lead_id: leadId, stage }),
+      });
+      if (!res.ok) throw new Error();
+      setNote(`${label}: ${STAGE_LABEL[stage] ?? stage}`);
+    } catch {
+      setRows((prev) => prev.map((r) => (r.leadId === leadId ? { ...r, stage: prevStage ?? "new" } : r)));
+      setNote("Não foi possível salvar o status. Tente de novo.");
+    }
+  }
+
+  const stageCounts = useMemo(() => {
+    const c: Record<string, number> = {};
+    for (const r of rows) c[r.stage] = (c[r.stage] ?? 0) + 1;
+    return c;
+  }, [rows]);
+  const visible = useMemo(() => {
+    const term = q.trim().toLowerCase();
+    return rows.filter((r) => {
+      if (srcFilter !== "all" && r.source !== srcFilter) return false;
+      if (stageFilter !== "all" && r.stage !== stageFilter) return false;
+      if (!term) return true;
+      return `${r.name ?? ""} ${r.clinic ?? ""} ${r.city ?? ""} ${r.ref ?? ""} ${r.phone ?? ""} ${r.email ?? ""}`.toLowerCase().includes(term);
+    });
+  }, [rows, q, srcFilter, stageFilter]);
+
+  if (st === "loading") return <p className="sub" style={{ marginTop: 24 }}>Carregando os leads do site…</p>;
+  if (st === "error" || !stats) return (
+    <div style={{ marginTop: 24 }}>
+      <p className="notemsg">Não foi possível carregar os leads do site agora.</p>
+      <button className="allbtn" style={{ marginTop: 10 }} onClick={load}>Tentar de novo</button>
+    </div>
+  );
+
+  const maxDay = Math.max(1, ...stats.daily.map((d) => d.n));
+  const freeN = stats.bySource.cadastro_free ?? 0;
+  const siteN = stats.bySource.site ?? 0;
+
+  return (
+    <div>
+      <header className="top">
+        <div className="eyebrow">Sysmax Software · Captação</div>
+        <h1>Leads do site</h1>
+        <p className="sub">Quem pediu contato pelo formulário do site, chamou no WhatsApp pelo botão do site ou criou uma conta Free no SYSVETMAX. São pessoas que levantaram a mão — abordagem humana, com cuidado. Cada novo lead também chega por aviso no WhatsApp.</p>
+      </header>
+
+      <div className="kpis">
+        <div className="kpi static"><div className="n tnum">{stats.total}</div><div className="l">Total de leads</div></div>
+        <div className="kpi static"><div className="n tnum">{stats.last7}</div><div className="l">Últimos 7 dias</div></div>
+        <div className="kpi static"><div className="n tnum">{stats.last30}</div><div className="l">Últimos 30 dias</div></div>
+        <div className="kpi static"><div className="n tnum">{siteN}</div><div className="l"><span className="dot wa" />Pelo site</div></div>
+        <div className="kpi static"><div className="n tnum">{freeN}</div><div className="l"><span className="dot email" />Contas Free</div></div>
+        <div className="kpi static kpi-won"><div className="n tnum">{stats.byStage.won ?? 0}</div><div className="l"><span className="dot won" />Viraram cliente</div></div>
+      </div>
+
+      <div className="sitepanels">
+        <section className="sitebox" aria-label="Leads por dia nos últimos 14 dias">
+          <div className="sitebox-ttl">Últimos 14 dias</div>
+          <div className="spark" role="img" aria-label={`Leads por dia: ${stats.daily.map((d) => `${d.date.slice(8)}/${d.date.slice(5, 7)}: ${d.n}`).join(", ")}`}>
+            {stats.daily.map((d) => (
+              <div className="spark-col" key={d.date} title={`${d.date.slice(8)}/${d.date.slice(5, 7)}: ${d.n}`}>
+                <div className="spark-n tnum">{d.n || ""}</div>
+                <div className="spark-bar" style={{ height: `${Math.max(d.n ? 8 : 2, Math.round((d.n / maxDay) * 64))}px` }} />
+                <div className="spark-d tnum">{d.date.slice(8)}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+        <section className="sitebox" aria-label="De onde vieram">
+          <div className="sitebox-ttl">De onde vieram (campanha / link)</div>
+          {stats.byRef.length ? (
+            <ul className="reflist">
+              {stats.byRef.map((r) => (
+                <li key={r.ref}><button className="spill" onClick={() => setQ(r.ref)} title="Filtrar por esta origem">{r.ref} <span className="spill-n">{r.n}</span></button></li>
+              ))}
+            </ul>
+          ) : (
+            <p className="sitebox-empty">Ainda sem origem identificada. Use links como <b>sysmaxsolutions.com/?ref=instagram</b> nas divulgações e a origem aparece aqui.</p>
+          )}
+        </section>
+      </div>
+
+      <div className="statusbar">
+        <span className="statuslbl">Origem:</span>
+        <button className={`spill${srcFilter === "all" ? " active" : ""}`} onClick={() => setSrcFilter("all")}>Todas</button>
+        <button className={`spill${srcFilter === "site" ? " active" : ""}`} onClick={() => setSrcFilter((c) => (c === "site" ? "all" : "site"))}>Site <span className="spill-n">{siteN}</span></button>
+        <button className={`spill${srcFilter === "cadastro_free" ? " active" : ""}`} onClick={() => setSrcFilter((c) => (c === "cadastro_free" ? "all" : "cadastro_free"))}>Conta Free <span className="spill-n">{freeN}</span></button>
+      </div>
+      <div className="statusbar">
+        <span className="statuslbl">Status:</span>
+        <button className={`spill${stageFilter === "all" ? " active" : ""}`} onClick={() => setStageFilter("all")}>Todos</button>
+        {STAGES.map((s) => (
+          <button key={s.key} className={`spill st-${s.key}${stageFilter === s.key ? " active" : ""}`} onClick={() => setStageFilter((c) => (c === s.key ? "all" : s.key))}>
+            {s.label} <span className="spill-n">{stageCounts[s.key] ?? 0}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="toolbar">
+        <input className="search" type="search" placeholder="Buscar nome, clínica, cidade, telefone ou origem…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar" />
+        <button className="allbtn" onClick={load}>Atualizar</button>
+      </div>
+
+      {note && <p className="notemsg">{note}</p>}
+      {stats.total > rows.length && <p className="sub" style={{ fontSize: 13, marginTop: 8 }}>Mostrando os {rows.length} mais recentes de {stats.total}.</p>}
+
+      <div className="grid">
+        {visible.map((r) => {
+          const digits = r.phone ? r.phone.replace(/\D/g, "") : null;
+          const title = r.clinic || r.name || "Sem nome";
+          const isOpen = open.has(r.leadId);
+          return (
+            <article className="card" key={r.leadId}>
+              <header className="card-top">
+                <div className="badges">
+                  <div className={`rec ${r.source === "cadastro_free" ? "rec-email" : "rec-wa"}`}>{SITE_SOURCE_LABEL[r.source] ?? r.source}</div>
+                  <div className={`stbadge st-${r.stage}`}>{STAGE_LABEL[r.stage] ?? r.stage}</div>
+                </div>
+                <div className="titlewrap">
+                  <h3>{title}</h3>
+                  {r.clinic && r.name && <span className="loc">{r.name}</span>}
+                  <span className="loc">{[r.city && (r.uf ? `${r.city}/${r.uf}` : r.city), `${whenFmt(r.createdAt)} · ${ago(r.createdAt)}`].filter(Boolean).join(" · ")}</span>
+                </div>
+              </header>
+              <div className="chips">
+                {digits && <a className="chip chip-wa" href={`https://wa.me/${digits}?text=${encodeURIComponent(waGreeting(r))}`} target="_blank" rel="noopener noreferrer">WhatsApp · {phoneDisplay(r.phone)}</a>}
+                {digits && <a className="chip" href={`tel:+${digits}`}>Ligar</a>}
+                {r.email && <a className="chip chip-em" href={`mailto:${r.email}`}>{r.email}</a>}
+                {r.ref && <span className="chip chip-ref" title="Origem (campanha / link)">origem: {r.ref}</span>}
+              </div>
+              {r.notes && (
+                <div className={`lnotes${isOpen ? " open" : ""}`}>
+                  <pre className="body">{r.notes}</pre>
+                  {r.notes.length > 140 && (
+                    <button className="copy" onClick={() => setOpen((s) => { const n = new Set(s); if (n.has(r.leadId)) n.delete(r.leadId); else n.add(r.leadId); return n; })}>
+                      {isOpen ? "Mostrar menos" : "Mostrar tudo"}
+                    </button>
+                  )}
+                </div>
+              )}
+              <div className="stage-ctl" role="group" aria-label="Status do lead">
+                {STAGES.map((s) => (
+                  <button key={s.key} className={`stbtn st-${s.key}${r.stage === s.key ? " on" : ""}`}
+                    onClick={() => setStage(r.leadId, s.key, title)} title={s.label}>{s.short}</button>
+                ))}
+              </div>
+            </article>
+          );
+        })}
+        {!visible.length && (
+          <div className="empty">
+            {rows.length ? (
+              <p style={{ margin: 0 }}>Nenhum lead com esse filtro.</p>
+            ) : (
+              <>
+                <p style={{ margin: "0 0 8px", fontWeight: 700, color: "var(--ink)" }}>Ainda não chegou nenhum lead do site.</p>
+                <p style={{ margin: 0, maxWidth: "58ch", marginInline: "auto" }}>Aqui aparece quem preencher o formulário &ldquo;Quero uma demonstração&rdquo; no site, quem chamar no WhatsApp pelo botão do site e quem criar uma conta Free no SYSVETMAX. Cada novo lead também gera um aviso no WhatsApp da equipe.</p>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      <footer>
+        Esta aba só mostra quem pediu contato ou criou conta — o site não rastreia visitantes anônimos. O texto do botão de WhatsApp é só uma sugestão: edite antes de enviar. Nada é enviado automaticamente. Fonte: CRM sysmax-sales-agent.
+      </footer>
+    </div>
+  );
+}
+
 const CSS = `
   :root{
     --bg:#F5F7F6; --surface:#FFFFFF; --surface-2:#F0F3F1; --ink:#141F1B; --muted:#5A6A63;
@@ -453,7 +691,7 @@ const CSS = `
   .search:focus{outline:2px solid var(--accent);outline-offset:1px}
   .allbtn{padding:9px 14px;border:1px solid var(--border);background:var(--surface);color:var(--ink);border-radius:10px;font-size:13px;font-weight:600;cursor:pointer}
   .allbtn.active{border-color:var(--accent);color:var(--accent-ink)}
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;margin-top:16px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(340px,100%),1fr));gap:16px;margin-top:16px}
   .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px 18px 16px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:11px}
   .card-top{display:flex;flex-direction:column;gap:8px}
   .rec{align-self:flex-start;font-size:11.5px;font-weight:750;letter-spacing:.03em;text-transform:uppercase;padding:4px 10px;border-radius:999px}
@@ -537,5 +775,23 @@ const CSS = `
   .briefactions{display:flex;justify-content:flex-end}
   .allbtn.ok{background:var(--accent);color:#fff;border-color:var(--accent)}
   .allbtn:disabled{opacity:.6;cursor:default}
+  .chip{max-width:100%;overflow:hidden;text-overflow:ellipsis}
+  .kpi.static{cursor:default}
+  .kpi.static:hover{transform:none}
+  .sitepanels{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:14px;margin:6px 0 14px}
+  @media (max-width:760px){.sitepanels{grid-template-columns:minmax(0,1fr)}}
+  .sitebox{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 16px;box-shadow:var(--shadow);min-width:0}
+  .sitebox-ttl{font-size:13px;font-weight:750;letter-spacing:-.01em;margin-bottom:10px}
+  .sitebox-empty{margin:0;font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+  .spark{display:flex;align-items:flex-end;gap:4px;min-height:96px}
+  .spark-col{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px}
+  .spark-bar{width:100%;max-width:22px;background:var(--accent);border-radius:4px 4px 2px 2px;opacity:.85}
+  .spark-n{font-size:10.5px;color:var(--muted);height:13px;line-height:13px}
+  .spark-d{font-size:10px;color:var(--muted)}
+  .reflist{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+  .chip-ref{color:var(--accent-ink);font-weight:500}
+  .lnotes{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+  .lnotes .body{width:100%;padding:8px 10px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;font-size:12.5px;color:var(--muted);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .lnotes.open .body{display:block;-webkit-line-clamp:unset;overflow:visible}
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 `;
