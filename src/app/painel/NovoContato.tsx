@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { montarTelefone } from "@/lib/phone-intl";
+import { paisPorSigla } from "@/lib/paises";
+import CampoPais from "./CampoPais";
 
 // ===========================================================================
 // Contato que a equipe encontrou por conta própria: cadastra e dispara no mesmo
@@ -9,17 +11,6 @@ import { montarTelefone } from "@/lib/phone-intl";
 // captação (2026-10-15) — a prospecção dela é no exterior, por isso o país é
 // campo de primeira classe. Usa as classes CSS injetadas por /painel.
 // ===========================================================================
-
-const PAISES: { sigla: string; nome: string; ddi: string }[] = [
-  { sigla: "US", nome: "Estados Unidos", ddi: "1" },
-  { sigla: "PT", nome: "Portugal", ddi: "351" },
-  { sigla: "AE", nome: "Emirados Árabes", ddi: "971" },
-  { sigla: "GB", nome: "Reino Unido", ddi: "44" },
-  { sigla: "ES", nome: "Espanha", ddi: "34" },
-  { sigla: "MX", nome: "México", ddi: "52" },
-  { sigla: "AR", nome: "Argentina", ddi: "54" },
-  { sigla: "BR", nome: "Brasil", ddi: "55" },
-];
 
 export type Quota = { cap: number; sent: number; remaining: number };
 
@@ -91,7 +82,7 @@ export default function NovoContato({ token, onQuota }: { token: string; onQuota
     } finally { setBusy(false); }
   }
 
-  const ddi = PAISES.find((p) => p.sigla === f.country)?.ddi;
+  const ddi = paisPorSigla(f.country)?.ddi;
   // Mostra o número final ANTES de abrir o WhatsApp: em 15/10 um telefone
   // brasileiro foi cadastrado com o país US e o link abriu a conversa errada.
   const fone = useMemo(() => (f.phone.trim() ? montarTelefone(f.phone, f.country) : null), [f.phone, f.country]);
@@ -113,11 +104,7 @@ export default function NovoContato({ token, onQuota }: { token: string; onQuota
           <input id="nv-contact" className="cinput" value={f.contact} onChange={set("contact")} placeholder="Dr. Vito" />
         </div>
         <div className="nvf">
-          <label className="clabel" htmlFor="nv-country">País</label>
-          <select id="nv-country" className="cinput" value={f.country}
-            onChange={(e) => setF((p) => ({ ...p, country: e.target.value }))}>
-            {PAISES.map((p) => <option key={p.sigla} value={p.sigla}>{p.nome}</option>)}
-          </select>
+          <CampoPais valor={f.country} onChange={(sigla) => setF((p) => ({ ...p, country: sigla }))} id="nv-country" />
         </div>
         <div className="nvf">
           <label className="clabel" htmlFor="nv-city">Cidade</label>

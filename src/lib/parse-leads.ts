@@ -6,6 +6,8 @@
 // lead silenciosamente errado.
 // ===========================================================================
 
+import { PAISES } from "@/lib/paises";
+
 export type ParsedLead = {
   clinic: string;
   contact: string | null;
@@ -20,19 +22,16 @@ export type ParsedLead = {
 };
 
 // Local vem em texto livre ("Manassas, Virginia, EUA", "Austin, Texas (EUA)",
-// "Dubai, Emirados Árabes Unidos"). Mapeia pelo nome do país no fim da frase.
-const PAISES: { re: RegExp; sigla: string }[] = [
-  { re: /\b(eua|usa|estados unidos|united states|u\.s\.a?\.?)\b/i, sigla: "US" },
-  { re: /\bportugal\b/i, sigla: "PT" },
-  { re: /\b(emirados|dubai|abu dhabi|uae|united arab)\b/i, sigla: "AE" },
-  { re: /\b(reino unido|united kingdom|inglaterra|london|londres|uk)\b/i, sigla: "GB" },
-  { re: /\b(espanha|spain|madrid|barcelona)\b/i, sigla: "ES" },
-  { re: /\b(m[eé]xico|mexico)\b/i, sigla: "MX" },
-  { re: /\b(argentina|buenos aires)\b/i, sigla: "AR" },
-  { re: /\b(brasil|brazil)\b/i, sigla: "BR" },
-  { re: /\b(canad[aá]|canada|toronto)\b/i, sigla: "CA" },
-  { re: /\b(austr[aá]lia|australia|sydney)\b/i, sigla: "AU" },
-];
+// "Dubai, Emirados Árabes Unidos"). Os padrões saem da MESMA lista usada pelo
+// campo de país e pelo telefone: país novo cadastrado lá passa a ser
+// reconhecido aqui sem nenhuma outra alteração.
+const PADROES: { re: RegExp; sigla: string }[] = PAISES.flatMap((p) => {
+  const termos = [p.nome, ...(p.apelidos ?? [])]
+    .map((t) => t.normalize("NFD").replace(/[̀-ͯ]/g, ""))
+    .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .sort((a, b) => b.length - a.length);
+  return [{ re: new RegExp(`\\b(?:${termos.join("|")})\\b`, "i"), sigla: p.sigla }];
+});
 
 const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
 // Telefone internacional em texto: + opcional, 8 a 15 dígitos com separadores.
@@ -53,7 +52,9 @@ const ROTULOS = {
 };
 
 function paisDe(texto: string): string | null {
-  for (const p of PAISES) if (p.re.test(texto)) return p.sigla;
+  // Compara sem acento: a lista chega com "Mexico" e "México" misturados.
+  const t = texto.normalize("NFD").replace(/[̀-ͯ]/g, "");
+  for (const p of PADROES) if (p.re.test(t)) return p.sigla;
   return null;
 }
 

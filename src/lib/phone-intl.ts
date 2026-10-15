@@ -1,4 +1,5 @@
 import { normalizePhoneBR } from "@/crm/lead-intake";
+import { paisPorSigla } from "@/lib/paises";
 
 // ===========================================================================
 // Telefone internacional em E.164 (sem '+').
@@ -9,17 +10,6 @@ import { normalizePhoneBR } from "@/crm/lead-intake";
 // significa mandar mensagem para a pessoa errada, então aqui o default é
 // RECUSAR em vez de adivinhar — e a tela mostra o número final antes de abrir.
 // ===========================================================================
-
-export const DDI: Record<string, string> = {
-  US: "1", CA: "1", BR: "55", PT: "351", AE: "971",
-  GB: "44", ES: "34", MX: "52", AR: "54", AU: "61",
-};
-
-// Comprimento do número nacional (sem DDI), para pegar erro grosseiro.
-const TAMANHO_NACIONAL: Record<string, [number, number]> = {
-  US: [10, 10], CA: [10, 10], BR: [10, 11], PT: [9, 9], AE: [8, 9],
-  GB: [9, 10], ES: [9, 9], MX: [10, 10], AR: [10, 11], AU: [9, 9],
-};
 
 export type FoneResultado =
   | { ok: true; e164: string; exibicao: string; aviso?: string }
@@ -34,7 +24,8 @@ export function montarTelefone(bruto: string, pais: string): FoneResultado {
   const digitos = (bruto ?? "").replace(/\D/g, "").replace(/^0+/, "");
   if (!digitos) return { ok: false, erro: "Informe o telefone." };
 
-  const ddi = DDI[pais];
+  const info = paisPorSigla(pais);
+  const ddi = info?.ddi;
   if (!ddi) {
     // País fora da lista: aceita só se vier com código de país explícito.
     if (digitos.length < 10 || digitos.length > 15) {
@@ -49,7 +40,7 @@ export function montarTelefone(bruto: string, pais: string): FoneResultado {
     return { ok: true, e164: br, exibicao: formatar(br, "55") };
   }
 
-  const [min, max] = TAMANHO_NACIONAL[pais] ?? [7, 14];
+  const [min, max] = info?.nacional ?? [7, 14];
   const temDdi = digitos.startsWith(ddi) && digitos.length - ddi.length >= min && digitos.length - ddi.length <= max;
   const e164 = temDdi ? digitos : ddi + digitos;
   const nacional = e164.slice(ddi.length);
@@ -57,7 +48,7 @@ export function montarTelefone(bruto: string, pais: string): FoneResultado {
   if (nacional.length < min || nacional.length > max) {
     return {
       ok: false,
-      erro: `Telefone não parece de ${pais}: esperado ${min === max ? min : `${min} a ${max}`} dígitos depois do código ${ddi}. Confira o país selecionado.`,
+      erro: `Telefone não parece de ${info?.nome ?? pais}: esperado ${min === max ? min : `${min} a ${max}`} dígitos depois do código ${ddi}. Confira o país.`,
     };
   }
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import CampoPais from "./CampoPais";
 
 // ===========================================================================
 // A equipe cola a lista que extraiu com a IA dela e o portal vira CRM. Sempre
@@ -14,17 +15,6 @@ type Item = {
   email: string | null; phone: string | null; warnings: string[]; existing: boolean;
   subject?: string | null; emailBody?: string | null;
 };
-
-const PAISES = [
-  { sigla: "US", nome: "Estados Unidos" },
-  { sigla: "PT", nome: "Portugal" },
-  { sigla: "AE", nome: "Emirados Árabes" },
-  { sigla: "GB", nome: "Reino Unido" },
-  { sigla: "ES", nome: "Espanha" },
-  { sigla: "MX", nome: "México" },
-  { sigla: "AR", nome: "Argentina" },
-  { sigla: "BR", nome: "Brasil" },
-];
 
 export default function ImportarLista({ token, onImportou }: { token: string; onImportou: () => void }) {
   const [texto, setTexto] = useState("");
@@ -98,11 +88,9 @@ export default function ImportarLista({ token, onImportou }: { token: string; on
           <label className="clabel" htmlFor="imp-txt">Lista extraída pela IA</label>
           <textarea id="imp-txt" className="ctext" rows={16} value={texto} onChange={(e) => setTexto(e.target.value)}
             placeholder={"Nome da clínica: Star Veterinary Clinic\nLocal: Dubai, Emirados Árabes Unidos\nResponsável: Dr. Vito\nE-mail: info@starvetclinic.com\n=\nNome da clínica: ..."} />
-          <div className="nvf" style={{ maxWidth: 280 }}>
-            <label className="clabel" htmlFor="imp-pais">Se não disser o país, considerar</label>
-            <select id="imp-pais" className="cinput" value={paisPadrao} onChange={(e) => setPaisPadrao(e.target.value)}>
-              {PAISES.map((p) => <option key={p.sigla} value={p.sigla}>{p.nome}</option>)}
-            </select>
+          <div className="nvf" style={{ maxWidth: 320 }}>
+            <CampoPais valor={paisPadrao} onChange={setPaisPadrao} id="imp-pais"
+              label="Se a lista não disser o país, considerar" />
           </div>
           <div className="crow">
             <button className="csend" disabled={busy || !texto.trim()} onClick={analisar}>
