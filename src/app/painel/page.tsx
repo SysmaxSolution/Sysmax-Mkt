@@ -161,7 +161,14 @@ export default function PainelPage() {
       const rk = REC[r.recommended]?.key ?? "call";
       const okF = filter === "all" || rk === filter;
       const okS = statusFilter === "all" || r.stage === statusFilter;
-      const okQ = !term || `${r.clinic} ${r.city ?? ""}`.toLowerCase().includes(term);
+      // Busca também por telefone e e-mail: a equipe precisa reencontrar a
+      // clínica pelo número quando ela retorna o contato. Dígitos são
+      // comparados sem máscara, então "11 93962" acha "5511939623300".
+      const digitos = term.replace(/\D/g, "");
+      const alvo = `${r.clinic} ${r.city ?? ""} ${r.uf ?? ""} ${r.country ?? ""} ${r.email ?? ""}`.toLowerCase();
+      const okQ = !term
+        || alvo.includes(term)
+        || (digitos.length >= 3 && (r.phone ?? "").replace(/\D/g, "").includes(digitos));
       return okF && okS && okQ;
     });
   }, [rows, filter, statusFilter, q]);
@@ -237,7 +244,7 @@ export default function PainelPage() {
         </div>
 
         <div className="toolbar">
-          <input className="search" type="search" placeholder="Buscar clínica ou cidade…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar" />
+          <input className="search" type="search" placeholder="Buscar por clínica, cidade, país, e-mail ou telefone…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar" />
           <button className={`allbtn${filter === "all" ? " active" : ""}`} onClick={() => setFilter("all")}>Ver todos os canais</button>
           {quota && (
             <span className={`quota${quota.remaining === 0 ? " zero" : ""}`} title="Limite diario que protege nosso dominio de cair em spam">
@@ -428,8 +435,21 @@ function PostsView({ token }: { token: string }) {
   );
 
   const d = data!;
+  // O gerador de conteúdo parou em ago/2026 e o lote antigo traz preço
+  // promocional que não vale mais (Starter "de 189 por 149,90" — a tabela
+  // vigente é 189). Publicar isso anuncia preço inexistente, então o aviso
+  // vem antes do conteúdo.
+  const diasDoLote = d.date ? Math.floor((Date.now() - new Date(d.date).getTime()) / 86_400_000) : 0;
+  const loteVelho = diasDoLote > 7;
   return (
     <div>
+      {loteVelho && (
+        <p className="stalewarn">
+          Atenção: este lote é de {new Date(d.date!).toLocaleDateString("pt-BR")}, há {diasDoLote} dias.
+          Confira preços e condições antes de publicar — pode haver promoção antiga no texto.
+          A tabela de hoje é Starter R$ 189, Premium R$ 359,90 e Enterprise R$ 1.299,90.
+        </p>
+      )}
       <header className="top">
         <div className="eyebrow">Sysmax Software · Conteúdo</div>
         <h1>Posts do dia</h1>
@@ -858,6 +878,7 @@ const CSS = `
   .fonechk.warn{color:var(--call)}
   .fonechk.err{color:var(--st-lost)}
   .impok{align-self:flex-start;font-size:10.5px;font-weight:750;color:var(--wa);background:var(--wa-bg);padding:2px 7px;border-radius:5px;margin-top:2px}
+  .stalewarn{margin:20px 0 0;padding:12px 14px;border-radius:9px;font-size:13px;font-weight:650;line-height:1.5;color:var(--call);background:var(--call-bg);border:1px solid color-mix(in srgb,var(--call) 35%,var(--border))}
   @media (max-width:620px){
     .nvgrid{grid-template-columns:1fr}
     .diarow{grid-template-columns:1fr auto;row-gap:2px}
