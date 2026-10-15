@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import NovoContato from "./NovoContato";
 import MeuDia from "./MeuDia";
+import ImportarLista from "./ImportarLista";
 
 // ===========================================================================
 // /painel — Painel comercial ao vivo para a equipe. Lê a fila consolidada do
@@ -44,7 +45,9 @@ function phoneDisplay(p: string | null): string | null {
   if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
   return p;
 }
-function primaryOf(r: Row): Msg {
+// Lead cadastrado ou importado à mão não tem rascunho: devolve undefined e o
+// card abre o editor em branco em vez de quebrar.
+function primaryOf(r: Row): Msg | undefined {
   const pref = r.recommended === "whatsapp_manual" ? "email" : r.recommended === "ig_dm" ? "ig_dm" : r.recommended === "call" ? "call" : "email";
   return r.messages.find((m) => m.channel === pref) ?? r.messages[0];
 }
@@ -55,7 +58,7 @@ export default function PainelPage() {
   const [counts, setCounts] = useState<Record<string, number>>({ email: 0, ig: 0, wa: 0, call: 0 });
   const [filter, setFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [view, setView] = useState<"leads" | "novo" | "dia" | "posts" | "site">("leads");
+  const [view, setView] = useState<"leads" | "novo" | "importar" | "dia" | "posts" | "site">("leads");
   const [q, setQ] = useState("");
   const [state, setState] = useState<"idle" | "loading" | "authed" | "error">("idle");
   const [note, setNote] = useState("");
@@ -197,12 +200,13 @@ export default function PainelPage() {
         <nav className="topnav">
           <button className={view === "leads" ? "on" : ""} onClick={() => setView("leads")}>Prospectos</button>
           <button className={view === "novo" ? "on" : ""} onClick={() => setView("novo")}>Contato novo</button>
+          <button className={view === "importar" ? "on" : ""} onClick={() => setView("importar")}>Importar lista</button>
           <button className={view === "dia" ? "on" : ""} onClick={() => setView("dia")}>Meu dia</button>
           <button className={view === "posts" ? "on" : ""} onClick={() => setView("posts")}>Posts do dia</button>
           <button className={view === "site" ? "on" : ""} onClick={() => setView("site")}>Leads do site</button>
         </nav>
 
-        {view === "novo" ? <NovoContato token={token} onQuota={setQuota} /> : view === "dia" ? <MeuDia token={token} /> : view === "site" ? <SiteLeadsView token={token} /> : view === "posts" ? <PostsView token={token} /> : (
+        {view === "importar" ? <ImportarLista token={token} onImportou={() => load(token)} /> : view === "novo" ? <NovoContato token={token} onQuota={setQuota} /> : view === "dia" ? <MeuDia token={token} /> : view === "site" ? <SiteLeadsView token={token} /> : view === "posts" ? <PostsView token={token} /> : (
         <>
         <header className="top">
           <div className="eyebrow">Sysmax Software · Esteira Comercial</div>
@@ -250,7 +254,7 @@ export default function PainelPage() {
             const rk = REC[r.recommended]?.key ?? "call";
             const recLabel = REC[r.recommended]?.label ?? r.recommended;
             const primary = primaryOf(r);
-            const ordered = [primary, ...r.messages.filter((m) => m !== primary)];
+            const ordered = primary ? [primary, ...r.messages.filter((m) => m !== primary)] : [];
             const waPhone = r.phone ? r.phone.replace(/\D/g, "") : null;
             return (
               <article className="card" key={i}>
@@ -299,6 +303,11 @@ export default function PainelPage() {
                     <pre className="body">{m.body}</pre>
                   </div>
                 ))}
+                {!r.messages.length && r.email && composeFor !== r.leadId && (
+                  <button className="mailbtn nodraft" onClick={() => openCompose(r.leadId, "", "")}>
+                    Escrever e enviar e-mail
+                  </button>
+                )}
                 {sentTo[r.leadId] && <p className="csent">E-mail enviado para {sentTo[r.leadId]}</p>}
                 {composeFor === r.leadId && (
                   <div className="composer">
@@ -835,6 +844,16 @@ const CSS = `
   .diacl{font-weight:650;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .diawh{color:var(--muted);font-size:11.5px}
   .diatm{color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+  .improw{display:flex;gap:11px;align-items:flex-start;padding:10px 12px;border-top:1px solid var(--border);cursor:pointer}
+  .improw:first-child{border-top:0}
+  .improw:hover{background:var(--surface-2)}
+  .improw.off{opacity:.45}
+  .improw input{margin-top:3px;flex:none;width:16px;height:16px;accent-color:var(--accent)}
+  .impmain{display:flex;flex-direction:column;gap:2px;min-width:0}
+  .impmain b{font-size:13px;color:var(--ink)}
+  .impsub{font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis}
+  .impwarn{align-self:flex-start;font-size:10.5px;font-weight:750;color:var(--call);background:var(--call-bg);padding:2px 7px;border-radius:5px;margin-top:2px}
+  .mailbtn.nodraft{display:inline-block;margin:10px 0 0;padding:7px 14px;font-size:12.5px}
   @media (max-width:620px){
     .nvgrid{grid-template-columns:1fr}
     .diarow{grid-template-columns:1fr auto;row-gap:2px}

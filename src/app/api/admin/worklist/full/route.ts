@@ -18,7 +18,7 @@ const badIg = /\.php|^(p|reel|reels|explore|accounts|stories)$/i;
 const CH_LABEL: Record<string, string> = { email: "E-mail", whatsapp: "WhatsApp", call: "Ligação", ig_dm: "Instagram DM" };
 
 type Lead = {
-  id: string; name: string | null; company_name: string | null; city: string | null; uf: string | null; country?: string | null;
+  id: string; name: string | null; company_name: string | null; city: string | null; uf: string | null; country?: string | null; opted_out?: boolean | null;
   phone: string | null; email: string | null; instagram_handle: string | null; website: string | null;
   enrichment_status: string | null; stage: string | null;
 };
@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
   // source manual = clínica cadastrada à mão pela equipe no painel; sem isso
   // os contatos que ela mesma encontra não apareceriam na fila.
   const [{ data: leads, error: le }, { data: outbox, error: oe }] = await Promise.all([
-    salesDb.from("leads").select("id,name,company_name,city,uf,country,phone,email,instagram_handle,website,enrichment_status,stage").in("source", ["places", "manual"]),
+    salesDb.from("leads").select("id,name,company_name,city,uf,country,phone,email,instagram_handle,website,enrichment_status,stage,opted_out").in("source", ["places", "manual"]),
     salesDb.from("outbox").select("id,lead_id,channel,subject,body,status").in("status", ["draft", "approved"]).order("created_at", { ascending: false }).limit(2000),
   ]);
   if (le || oe) return NextResponse.json({ ok: false, error: (le ?? oe)?.message }, { status: 500 });
@@ -84,6 +84,37 @@ export async function GET(req: NextRequest) {
       recommended: rec,
       recommendedReason: reason,
       messages: items.map((i) => ({ id: i.id, channel: i.channel, channelLabel: CH_LABEL[i.channel] ?? i.channel, subject: i.subject ?? null, body: i.body, status: i.status })),
+    });
+  }
+
+  // A fila acima sai da outbox, então só contempla lead que já tem rascunho
+  // gerado pelo cron. Lead cadastrado ou importado à mão pela equipe não tem
+  // rascunho nenhum — sem este bloco ele nunca apareceria e a importação não
+  // serviria para nada. Entra sem mensagem; o painel abre o editor em branco.
+  for (const raw of (leads ?? []) as Lead[]) {
+    if (byLead.has(raw.id)) continue;
+    if (raw.opted_out) continue;
+    if (raw.stage === "won" || raw.stage === "lost") continue;
+    const goodEmail = !!raw.email && !badEmail.test(raw.email);
+    const hasIg = !!raw.instagram_handle && !badIg.test(raw.instagram_handle);
+    let rec: string, reason: string;
+    if (goodEmail) { rec = "email"; reason = "E-mail corporativo válido — pode escrever e enviar daqui."; }
+    else if (raw.email && raw.phone) { rec = "whatsapp_manual"; reason = `E-mail é pessoal (${raw.email}) — melhor abordar por WhatsApp/telefone.`; }
+    else if (raw.phone) { rec = "call"; reason = "Sem e-mail corporativo — ligação ou WhatsApp no telefone."; }
+    else if (hasIg) { rec = "ig_dm"; reason = "Só o Instagram como contato — DM tem alta taxa de leitura."; }
+    else { rec = "call"; reason = "Contato incompleto — confirme os dados da clínica."; }
+    rows.push({
+      leadId: raw.id,
+      stage: raw.stage ?? "new",
+      clinic: raw.company_name ?? raw.name ?? "(sem nome)",
+      city: raw.city, uf: raw.uf, country: raw.country ?? "BR",
+      phone: raw.phone ?? null,
+      email: goodEmail ? raw.email : null,
+      instagram: hasIg ? raw.instagram_handle : null,
+      website: raw.website ?? null,
+      recommended: rec,
+      recommendedReason: reason,
+      messages: [],
     });
   }
 
