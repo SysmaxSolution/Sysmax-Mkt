@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import NovoContato from "./NovoContato";
 import MeuDia from "./MeuDia";
 import ImportarLista from "./ImportarLista";
+import EnviarMaterial from "./EnviarMaterial";
 
 // ===========================================================================
 // /painel — Painel comercial ao vivo para a equipe. Lê a fila consolidada do
@@ -58,7 +59,7 @@ export default function PainelPage() {
   const [counts, setCounts] = useState<Record<string, number>>({ email: 0, ig: 0, wa: 0, call: 0 });
   const [filter, setFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [view, setView] = useState<"leads" | "novo" | "importar" | "dia" | "posts" | "site">("leads");
+  const [view, setView] = useState<"leads" | "novo" | "importar" | "material" | "dia" | "posts" | "site">("leads");
   const [q, setQ] = useState("");
   const [state, setState] = useState<"idle" | "loading" | "authed" | "error">("idle");
   const [note, setNote] = useState("");
@@ -208,12 +209,13 @@ export default function PainelPage() {
           <button className={view === "leads" ? "on" : ""} onClick={() => setView("leads")}>Prospectos</button>
           <button className={view === "novo" ? "on" : ""} onClick={() => setView("novo")}>Contato novo</button>
           <button className={view === "importar" ? "on" : ""} onClick={() => setView("importar")}>Importar lista</button>
+          <button className={view === "material" ? "on" : ""} onClick={() => setView("material")}>Enviar material</button>
           <button className={view === "dia" ? "on" : ""} onClick={() => setView("dia")}>Meu dia</button>
           <button className={view === "posts" ? "on" : ""} onClick={() => setView("posts")}>Posts do dia</button>
           <button className={view === "site" ? "on" : ""} onClick={() => setView("site")}>Leads do site</button>
         </nav>
 
-        {view === "importar" ? <ImportarLista token={token} onImportou={() => load(token)} /> : view === "novo" ? <NovoContato token={token} onQuota={setQuota} /> : view === "dia" ? <MeuDia token={token} /> : view === "site" ? <SiteLeadsView token={token} /> : view === "posts" ? <PostsView token={token} /> : (
+        {view === "material" ? <EnviarMaterial token={token} /> : view === "importar" ? <ImportarLista token={token} onImportou={() => load(token)} /> : view === "novo" ? <NovoContato token={token} onQuota={setQuota} /> : view === "dia" ? <MeuDia token={token} /> : view === "site" ? <SiteLeadsView token={token} /> : view === "posts" ? <PostsView token={token} /> : (
         <>
         <header className="top">
           <div className="eyebrow">Sysmax Software · Esteira Comercial</div>
@@ -878,6 +880,10 @@ const CSS = `
   .fonechk.warn{color:var(--call)}
   .fonechk.err{color:var(--st-lost)}
   .impok{align-self:flex-start;font-size:10.5px;font-weight:750;color:var(--wa);background:var(--wa-bg);padding:2px 7px;border-radius:5px;margin-top:2px}
+  .tiporow{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+  .tipobtn{font-size:13px;font-weight:650;border:1px solid var(--border);background:var(--surface);color:var(--ink);padding:9px 16px;border-radius:8px;cursor:pointer}
+  .tipobtn:hover{border-color:var(--accent)}
+  .tipobtn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
   .stalewarn{margin:20px 0 0;padding:12px 14px;border-radius:9px;font-size:13px;font-weight:650;line-height:1.5;color:var(--call);background:var(--call-bg);border:1px solid color-mix(in srgb,var(--call) 35%,var(--border))}
   @media (max-width:620px){
     .nvgrid{grid-template-columns:1fr}

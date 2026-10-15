@@ -12,3 +12,17 @@ COMMENT ON COLUMN leads.country IS 'ISO-3166 alpha-2 (BR, US, PT, AE). Default B
 ALTER TABLE leads DROP CONSTRAINT IF EXISTS leads_source_check;
 ALTER TABLE leads ADD CONSTRAINT leads_source_check CHECK (source = ANY (ARRAY[
   'whatsapp','instagram','facebook','site','indicacao','places','outro','cadastro_free','manual']));
+
+-- 3) Recados que a equipe manda pelo painel para o Diretor. Nao sao conteudo,
+-- entao nao cabiam em content_calendar (que exige platform de rede social).
+CREATE TABLE IF NOT EXISTS team_notes (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  autor       text NOT NULL,
+  titulo      text,
+  texto       text NOT NULL,
+  obs         text,
+  entregue    boolean NOT NULL DEFAULT false,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS team_notes_created_idx ON team_notes(created_at DESC);
+COMMENT ON TABLE team_notes IS 'Recados da equipe comercial ao Diretor, enviados pela aba "Enviar material" do painel.';
