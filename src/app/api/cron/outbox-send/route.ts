@@ -4,6 +4,7 @@ import { salesDb } from "@/lib/supabase";
 import { sendEmail } from "@/lib/mailer";
 import { sendText } from "@/lib/evolution";
 import { isSuppressed } from "@/lib/suppression";
+import { emailCapToday, sentTodayCount } from "@/lib/send-quota";
 
 // ===========================================================================
 // Worker de envio. Só toca itens JÁ APROVADOS pelo fundador (status='approved')
@@ -16,9 +17,6 @@ export const runtime = "nodejs";
 // 40 e-mails + 15 WA (throttle 1.5s) num run só ≈ 50s — 60s era gargalo.
 export const maxDuration = 120;
 
-const WARMUP_MIN = parseInt(process.env.WARMUP_MIN ?? "20", 10);
-const WARMUP_MAX = parseInt(process.env.WARMUP_MAX ?? "40", 10);
-const WARMUP_STEP = parseInt(process.env.WARMUP_STEP ?? "5", 10);
 const WA_DAILY_CAP = parseInt(process.env.WA_DAILY_CAP ?? "15", 10);
 // Cap POR EXECUÇÃO (Diretor 31/07): 2 disparos/dia (11h e 17h BRT) de até
 // WA_RUN_CAP cada — divide o volume diário e parece mais humano.
@@ -26,30 +24,6 @@ const WA_RUN_CAP = parseInt(process.env.WA_RUN_CAP ?? "15", 10);
 // Precisa comportar os dois caps diários somados (40 e-mail + 15 WA) num run só.
 const SEND_BATCH = parseInt(process.env.OUTBOX_SEND_BATCH ?? "60", 10);
 
-function startOfTodayUTC(): string {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
-}
-
-// Cap de e-mail do dia conforme rampa de aquecimento.
-function emailCapToday(): number {
-  const startEnv = process.env.WARMUP_START_DATE;
-  if (!startEnv) return WARMUP_MIN;
-  const start = new Date(startEnv).getTime();
-  if (Number.isNaN(start)) return WARMUP_MIN;
-  const days = Math.floor((Date.now() - start) / 86_400_000);
-  return Math.min(WARMUP_MAX, WARMUP_MIN + Math.max(0, days) * WARMUP_STEP);
-}
-
-async function sentTodayCount(channel: "email" | "whatsapp"): Promise<number> {
-  const { count } = await salesDb
-    .from("outbox")
-    .select("id", { count: "exact", head: true })
-    .eq("channel", channel)
-    .eq("status", "sent")
-    .gte("sent_at", startOfTodayUTC());
-  return count ?? 0;
-}
 
 type Row = {
   id: string;

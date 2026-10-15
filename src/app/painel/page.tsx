@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import NovoContato from "./NovoContato";
+import MeuDia from "./MeuDia";
 
 // ===========================================================================
 // /painel — Painel comercial ao vivo para a equipe. Lê a fila consolidada do
@@ -12,7 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 type Msg = { id: string; channel: string; channelLabel: string; subject: string | null; body: string; status: string };
 type Row = {
   leadId: string; stage: string;
-  clinic: string; city: string | null; uf: string | null;
+  clinic: string; city: string | null; uf: string | null; country?: string | null;
   phone: string | null; email: string | null; instagram: string | null; website: string | null;
   recommended: string; recommendedReason: string; messages: Msg[];
 };
@@ -53,11 +55,16 @@ export default function PainelPage() {
   const [counts, setCounts] = useState<Record<string, number>>({ email: 0, ig: 0, wa: 0, call: 0 });
   const [filter, setFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [view, setView] = useState<"leads" | "posts" | "site">("leads");
+  const [view, setView] = useState<"leads" | "novo" | "dia" | "posts" | "site">("leads");
   const [q, setQ] = useState("");
   const [state, setState] = useState<"idle" | "loading" | "authed" | "error">("idle");
   const [note, setNote] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
+  const [quota, setQuota] = useState<{ cap: number; sent: number; remaining: number } | null>(null);
+  const [composeFor, setComposeFor] = useState<string | null>(null);
+  const [draft, setDraft] = useState<{ subject: string; body: string }>({ subject: "", body: "" });
+  const [sending, setSending] = useState(false);
+  const [sentTo, setSentTo] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const t = typeof window !== "undefined" ? localStorage.getItem("sysmax_viewer_token") ?? "" : "";
@@ -76,7 +83,15 @@ export default function PainelPage() {
     } catch { setState("error"); setNote("Falha de rede ao carregar."); }
   }, []);
 
-  useEffect(() => { if (token) load(token); }, [token, load]);
+  const loadQuota = useCallback(async (tk: string) => {
+    try {
+      const res = await fetch("/api/painel/send-email", { headers: { "x-admin-token": tk } });
+      const d = await res.json();
+      if (d.ok) setQuota(d.quota);
+    } catch { /* o painel funciona sem o contador */ }
+  }, []);
+
+  useEffect(() => { if (token) { load(token); loadQuota(token); } }, [token, load, loadQuota]);
 
   function entrar() { localStorage.setItem("sysmax_viewer_token", token); load(token); }
 
@@ -99,6 +114,35 @@ export default function PainelPage() {
     } catch {
       setRows((prev) => prev.map((r) => (r.leadId === leadId ? { ...r, stage: prevStage ?? "new" } : r)));
       setNote("Não foi possível salvar o status. Tente de novo.");
+    }
+  }
+
+  function openCompose(leadId: string, subject: string, body: string) {
+    setComposeFor(leadId);
+    setDraft({ subject: subject ?? "", body: body ?? "" });
+    setNote("");
+  }
+
+  async function sendMail(leadId: string, clinic: string) {
+    if (!draft.subject.trim() || !draft.body.trim()) { setNote("Preencha o assunto e o texto antes de enviar."); return; }
+    setSending(true);
+    try {
+      const res = await fetch("/api/painel/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-token": token },
+        body: JSON.stringify({ leadId, subject: draft.subject, body: draft.body }),
+      });
+      const d = await res.json();
+      if (!d.ok) { setNote(d.error ?? "Não foi possível enviar."); if (d.quota) setQuota(d.quota); return; }
+      setSentTo((m) => ({ ...m, [leadId]: d.to }));
+      if (d.quota) setQuota(d.quota);
+      setComposeFor(null);
+      setRows((prev) => prev.map((r) => (r.leadId === leadId && r.stage === "new" ? { ...r, stage: "engaged" } : r)));
+      setNote(`E-mail enviado para ${clinic}. Ainda cabem ${d.quota?.remaining ?? "?"} e-mails hoje.`);
+    } catch {
+      setNote("Falha de rede. O e-mail pode não ter saído — confira antes de repetir.");
+    } finally {
+      setSending(false);
     }
   }
 
@@ -152,11 +196,13 @@ export default function PainelPage() {
       <div className="wrap">
         <nav className="topnav">
           <button className={view === "leads" ? "on" : ""} onClick={() => setView("leads")}>Prospectos</button>
+          <button className={view === "novo" ? "on" : ""} onClick={() => setView("novo")}>Contato novo</button>
+          <button className={view === "dia" ? "on" : ""} onClick={() => setView("dia")}>Meu dia</button>
           <button className={view === "posts" ? "on" : ""} onClick={() => setView("posts")}>Posts do dia</button>
           <button className={view === "site" ? "on" : ""} onClick={() => setView("site")}>Leads do site</button>
         </nav>
 
-        {view === "site" ? <SiteLeadsView token={token} /> : view === "posts" ? <PostsView token={token} /> : (
+        {view === "novo" ? <NovoContato token={token} onQuota={setQuota} /> : view === "dia" ? <MeuDia token={token} /> : view === "site" ? <SiteLeadsView token={token} /> : view === "posts" ? <PostsView token={token} /> : (
         <>
         <header className="top">
           <div className="eyebrow">Sysmax Software · Esteira Comercial</div>
@@ -189,6 +235,12 @@ export default function PainelPage() {
         <div className="toolbar">
           <input className="search" type="search" placeholder="Buscar clínica ou cidade…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar" />
           <button className={`allbtn${filter === "all" ? " active" : ""}`} onClick={() => setFilter("all")}>Ver todos os canais</button>
+          {quota && (
+            <span className={`quota${quota.remaining === 0 ? " zero" : ""}`} title="Limite diario que protege nosso dominio de cair em spam">
+              E-mails hoje: {quota.sent}/{quota.cap}
+              {quota.remaining === 0 ? " - limite atingido, use o WhatsApp" : ` - restam ${quota.remaining}`}
+            </span>
+          )}
         </div>
 
         {note && <p className="notemsg">{note}</p>}
@@ -209,7 +261,10 @@ export default function PainelPage() {
                   </div>
                   <div className="titlewrap">
                     <h3>{r.clinic}</h3>
-                    <span className="loc">{r.city}/{r.uf}</span>
+                    <span className="loc">
+                      {[r.city, r.uf].filter(Boolean).join("/")}
+                      {r.country && r.country !== "BR" && <b className="flagtag">{r.country}</b>}
+                    </span>
                   </div>
                 </header>
                 <p className="why">{r.recommendedReason}</p>
@@ -234,11 +289,36 @@ export default function PainelPage() {
                     <div className="msg-head">
                       <span className={`msg-ch ch-${m.channel}`}>{m.channelLabel}{j === 0 ? " · recomendado" : ""}</span>
                       <button className={`copy${copied === m.id ? " done" : ""}`} onClick={() => copy(m.id, (m.subject ? "Assunto: " + m.subject + "\n\n" : "") + m.body)}>{copied === m.id ? "Copiado ✓" : "Copiar"}</button>
+                      {m.channel === "email" && r.email && (
+                        <button className="mailbtn" onClick={() => openCompose(r.leadId, m.subject ?? "", m.body)}>
+                          {composeFor === r.leadId ? "Editando..." : "Escrever e enviar"}
+                        </button>
+                      )}
                     </div>
                     {m.subject && <div className="subj">{m.subject}</div>}
                     <pre className="body">{m.body}</pre>
                   </div>
                 ))}
+                {sentTo[r.leadId] && <p className="csent">E-mail enviado para {sentTo[r.leadId]}</p>}
+                {composeFor === r.leadId && (
+                  <div className="composer">
+                    <label className="clabel" htmlFor={`subj-${r.leadId}`}>Assunto</label>
+                    <input id={`subj-${r.leadId}`} className="cinput" value={draft.subject} maxLength={200}
+                      onChange={(e) => setDraft((d) => ({ ...d, subject: e.target.value }))} />
+                    <label className="clabel" htmlFor={`body-${r.leadId}`}>Mensagem</label>
+                    <textarea id={`body-${r.leadId}`} className="ctext" rows={12} value={draft.body}
+                      onChange={(e) => setDraft((d) => ({ ...d, body: e.target.value }))} />
+                    <p className="chint">
+                      Sai do e-mail da empresa para <b>{r.email}</b>. O link de descadastro entra sozinho no final, como a lei exige.
+                    </p>
+                    <div className="crow">
+                      <button className="csend" disabled={sending} onClick={() => sendMail(r.leadId, r.clinic)}>
+                        {sending ? "Enviando..." : "Enviar agora"}
+                      </button>
+                      <button className="ccancel" disabled={sending} onClick={() => setComposeFor(null)}>Cancelar</button>
+                    </div>
+                  </div>
+                )}
               </article>
             );
           })}
@@ -717,6 +797,49 @@ const CSS = `
   .copy{font-size:12px;font-weight:650;border:1px solid var(--border);background:var(--surface);color:var(--ink);padding:4px 12px;border-radius:7px;cursor:pointer}
   .copy:hover{border-color:var(--accent);color:var(--accent-ink)}
   .copy.done{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .mailbtn{font-size:12px;font-weight:700;border:1px solid var(--accent);background:var(--accent);color:#fff;padding:4px 12px;border-radius:7px;cursor:pointer;margin-left:6px}
+  .mailbtn:hover{filter:brightness(1.07)}
+  .quota{margin-left:auto;font-size:12px;font-weight:650;color:var(--muted);padding:5px 10px;border:1px solid var(--border);border-radius:999px;background:var(--surface)}
+  .quota.zero{color:var(--st-lost);border-color:color-mix(in srgb,var(--st-lost) 40%,var(--border))}
+  .composer{margin-top:10px;padding:12px;border:1px solid color-mix(in srgb,var(--accent) 35%,var(--border));border-radius:10px;background:var(--surface-2)}
+  .clabel{display:block;font-size:11.5px;font-weight:750;letter-spacing:.02em;color:var(--muted);margin:0 0 4px}
+  .cinput,.ctext{width:100%;box-sizing:border-box;font-family:inherit;font-size:13px;color:var(--ink);background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:10px}
+  .ctext{line-height:1.5;resize:vertical}
+  .cinput:focus,.ctext:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+  .chint{margin:0 0 10px;font-size:12px;color:var(--muted);line-height:1.45}
+  .crow{display:flex;gap:8px;flex-wrap:wrap}
+  .csend{font-size:13px;font-weight:750;border:1px solid var(--accent);background:var(--accent);color:#fff;padding:8px 18px;border-radius:8px;cursor:pointer}
+  .csend:disabled{opacity:.6;cursor:progress}
+  .ccancel{font-size:13px;font-weight:650;border:1px solid var(--border);background:var(--surface);color:var(--ink);padding:8px 16px;border-radius:8px;cursor:pointer}
+  .ccancel:disabled{opacity:.6}
+  .csent{margin:10px 0 0;font-size:12.5px;font-weight:700;color:var(--st-won)}
+  .flagtag{margin-left:6px;font-size:10.5px;font-weight:800;letter-spacing:.06em;padding:2px 6px;border-radius:5px;background:var(--email-bg);color:var(--email)}
+  .novo{max-width:860px;margin:0 auto;padding:4px 0 28px}
+  .nvhint{margin:0 0 16px;font-size:13px;color:var(--muted);line-height:1.5;padding:11px 13px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px}
+  .nvgrid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px;margin-bottom:6px}
+  .nvf-wide{grid-column:1 / -1}
+  .ddi{font-weight:600;text-transform:none;letter-spacing:0;color:var(--accent-ink)}
+  .cwa{font-size:13px;font-weight:700;border:1px solid var(--wa);background:var(--wa-bg);color:var(--wa);padding:8px 16px;border-radius:8px;cursor:pointer}
+  .cwa:disabled{opacity:.6}
+  .nvmsg{margin:12px 0 0;font-size:13px;font-weight:650;line-height:1.45;padding:10px 12px;border-radius:8px}
+  .nv-ok{color:var(--st-won);background:var(--wa-bg);border:1px solid color-mix(in srgb,var(--st-won) 35%,var(--border))}
+  .nv-err{color:var(--st-lost);background:var(--surface);border:1px solid color-mix(in srgb,var(--st-lost) 35%,var(--border))}
+  .diagrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:16px}
+  .diacard{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center;box-shadow:var(--shadow)}
+  .diacard b{display:block;font-size:26px;line-height:1.1;color:var(--accent-ink)}
+  .diacard span{font-size:11.5px;font-weight:650;color:var(--muted)}
+  .dialist{border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--surface)}
+  .diarow{display:grid;grid-template-columns:96px 1fr auto 52px;gap:10px;align-items:center;padding:9px 12px;border-top:1px solid var(--border);font-size:12.5px}
+  .diarow:first-child{border-top:0}
+  .diach{font-weight:750;color:var(--accent-ink)}
+  .diacl{font-weight:650;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .diawh{color:var(--muted);font-size:11.5px}
+  .diatm{color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+  @media (max-width:620px){
+    .nvgrid{grid-template-columns:1fr}
+    .diarow{grid-template-columns:1fr auto;row-gap:2px}
+    .diawh{grid-column:1 / -1}
+  }
   .subj{font-size:13px;font-weight:700;padding:9px 12px 0}
   .body{margin:0;padding:10px 12px 13px;white-space:pre-wrap;font-family:inherit;font-size:13px;color:var(--ink);line-height:1.5}
   .badges{display:flex;gap:6px;flex-wrap:wrap;align-items:center}

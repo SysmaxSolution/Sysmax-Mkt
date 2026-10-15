@@ -9,7 +9,8 @@ import { isSuppressed } from "@/lib/suppression";
 // Env:
 //   RESEND_API_KEY       chave do Resend (subdomínio verificado c/ SPF/DKIM/DMARC)
 //   MAIL_FROM            ex: "Sysmax Software <contato@mkt.sysmaxsolutions.com>"
-//   MAIL_REPLY_TO        inbox real do fundador (respostas caem no Gmail)
+//   MAIL_REPLY_TO        inbox(es) real(is) que recebem as respostas; aceita
+//                        vários endereços separados por vírgula
 //   APP_BASE_URL         base pública p/ o link de unsubscribe
 //   UNSUBSCRIBE_SECRET   segredo p/ assinar o link (fallback: ADMIN_TOKEN)
 //
@@ -25,6 +26,15 @@ const RESEND_ENDPOINT = "https://api.resend.com/emails";
 const cleanEnv = (v: string | undefined) => v?.replace(/^﻿/, "").trim() || undefined;
 const resendKey = () => cleanEnv(process.env.RESEND_API_KEY);
 const mailFrom = () => cleanEnv(process.env.MAIL_FROM);
+
+// Reply-To aceita lista separada por vírgula: o time comercial acompanha as
+// respostas na própria caixa sem precisar de mailbox no subdomínio de envio.
+function replyToList(): string[] | undefined {
+  const raw = cleanEnv(process.env.MAIL_REPLY_TO);
+  if (!raw) return undefined;
+  const list = raw.split(",").map((s) => s.trim()).filter(Boolean);
+  return list.length ? list : undefined;
+}
 
 function unsubSecret(): string {
   const s = process.env.UNSUBSCRIBE_SECRET ?? process.env.ADMIN_TOKEN;
@@ -45,8 +55,19 @@ export function verifyUnsub(leadId: string, email: string, token: string): boole
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+// APP_BASE_URL nunca foi configurada na Vercel, o que gerava link de opt-out
+// sem domínio (e-mail frio sem opt-out válido = exposição de LGPD). As vars da
+// Vercel vêm sem esquema, por isso o https:// na frente.
+function publicBase(): string {
+  const explicit = cleanEnv(process.env.APP_BASE_URL);
+  if (explicit) return explicit.replace(/\/$/, "");
+  const host = cleanEnv(process.env.VERCEL_PROJECT_PRODUCTION_URL) ?? cleanEnv(process.env.VERCEL_URL);
+  if (host) return `https://${host.replace(/\/$/, "")}`;
+  throw new Error("Sem base pública para o link de opt-out: configure APP_BASE_URL.");
+}
+
 export function buildUnsubscribeUrl(leadId: string, email: string): string {
-  const base = (process.env.APP_BASE_URL ?? "").replace(/\/$/, "");
+  const base = publicBase();
   const token = sign(leadId, email);
   const qs = new URLSearchParams({ lead: leadId, email, t: token });
   return `${base}/api/unsubscribe?${qs.toString()}`;
@@ -90,7 +111,7 @@ Se não quiser mais receber, cancele aqui: ${unsubUrl}`;
       "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
     },
   };
-  const replyTo = process.env.MAIL_REPLY_TO;
+  const replyTo = replyToList();
   if (replyTo) payload.reply_to = replyTo;
 
   const res = await fetch(RESEND_ENDPOINT, {
@@ -125,7 +146,7 @@ export async function sendSolicitedEmail(args: {
     text: args.text,
   };
   if (args.attachments?.length) payload.attachments = args.attachments;
-  const replyTo = process.env.MAIL_REPLY_TO;
+  const replyTo = replyToList();
   if (replyTo) payload.reply_to = replyTo;
   const res = await fetch(RESEND_ENDPOINT, {
     method: "POST",
