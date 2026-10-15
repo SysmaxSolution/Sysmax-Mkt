@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAuthorizedViewer } from "@/lib/viewer-auth";
 import { salesDb } from "@/lib/supabase";
-import { cleanEmail, cleanText, normalizePhoneBR } from "@/crm/lead-intake";
+import { cleanEmail, cleanText } from "@/crm/lead-intake";
+import { montarTelefone } from "@/lib/phone-intl";
 
 // ===========================================================================
 // POST /api/painel/lead — a equipe cadastra na hora uma clínica que ela mesma
@@ -14,15 +15,6 @@ import { cleanEmail, cleanText, normalizePhoneBR } from "@/crm/lead-intake";
 // ===========================================================================
 
 export const runtime = "nodejs";
-
-// Telefone fora do Brasil: E.164 sem '+'. normalizePhoneBR cobre o caso BR
-// (DDD, nono dígito); para os outros países só validamos o formato.
-function normalizePhoneIntl(raw: string, country: string): string | null {
-  const digits = (raw ?? "").replace(/\D/g, "").replace(/^0+/, "");
-  if (!digits) return null;
-  if (country === "BR") return normalizePhoneBR(raw);
-  return digits.length >= 8 && digits.length <= 15 ? digits : null;
-}
 
 const COUNTRY_RE = /^[A-Z]{2}$/;
 
@@ -42,9 +34,11 @@ export async function POST(req: NextRequest) {
   if (!COUNTRY_RE.test(country)) {
     return NextResponse.json({ ok: false, error: "País inválido. Use a sigla de 2 letras: US, PT, AE, BR." }, { status: 400 });
   }
-  const phone = phoneRaw ? normalizePhoneIntl(phoneRaw, country) : null;
-  if (phoneRaw && !phone) {
-    return NextResponse.json({ ok: false, error: "Telefone inválido. Inclua o código do país, ex: 1 para EUA, 351 Portugal, 971 Emirados." }, { status: 400 });
+  let phone: string | null = null;
+  if (phoneRaw) {
+    const r = montarTelefone(phoneRaw, country);
+    if (!r.ok) return NextResponse.json({ ok: false, error: r.erro }, { status: 400 });
+    phone = r.e164;
   }
   if (!email && !phone) {
     return NextResponse.json({ ok: false, error: "Informe pelo menos o e-mail ou o WhatsApp da clínica." }, { status: 400 });

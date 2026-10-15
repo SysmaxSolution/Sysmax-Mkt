@@ -13,6 +13,8 @@ export type ParsedLead = {
   country: string;
   email: string | null;
   phone: string | null;
+  subject: string | null;
+  emailBody: string | null;
   raw: string;
   warnings: string[];
 };
@@ -44,6 +46,10 @@ const ROTULOS = {
   contact: /^(?:respons[áa]vel|contato|propriet[áa]ri[oa]|diretor[a]?|gestor[a]?)\s*:\s*(.*)$/i,
   email: /^(?:e-?mail(?:\s*"?correto"?)?|destinat[áa]rio\s*\(e-?mail\)|endere[çc]o\s+de\s+e-?mail)\s*:\s*(.*)$/i,
   phone: /^(?:telefone|tel|whatsapp|zap|celular|phone)\s*:\s*(.*)$/i,
+  // A IA da equipe (Gemini) já devolve o e-mail redigido por clínica, então
+  // importamos assunto e corpo junto: ela deixa de copiar e colar.
+  subject: /^(?:assunto(?:\s+e-?mail)?|subject)\s*:\s*(.*)$/i,
+  emailBody: /^(?:texto(?:\s+(?:do\s+)?e-?mail)?|corpo(?:\s+do\s+e-?mail)?|mensagem|body)\s*:\s*(.*)$/i,
 };
 
 function paisDe(texto: string): string | null {
@@ -100,6 +106,34 @@ function valorDoRotulo(linhas: string[], re: RegExp): { valor: string | null; id
   return { valor: null, idx: -1 };
 }
 
+// A lista vem agrupada por país, com cabeçalhos como "🇺🇸 ESTADOS UNIDOS (USA)".
+// Sem reconhecê-los, o corpo do e-mail de uma clínica engolia o cabeçalho da
+// seção seguinte.
+function ehCabecalhoDeSecao(linha: string): boolean {
+  const t = linha.trim();
+  if (!t) return false;
+  if (/\p{Extended_Pictographic}|\u{1F1E6}-\u{1F1FF}/u.test(t) && t.length < 60) return true;
+  return t.length < 60 && !/[a-zà-ú]/.test(t) && /[A-ZÀ-Ú]{4,}/.test(t);
+}
+
+// O corpo do e-mail é multi-linha: começa no rótulo e segue até o fim do
+// bloco, pulando as linhas que são outros rótulos conhecidos.
+function corpoDoEmail(linhas: string[]): string | null {
+  const i = linhas.findIndex((l) => ROTULOS.emailBody.test(l.trim()));
+  if (i < 0) return null;
+  const primeira = (linhas[i].trim().match(ROTULOS.emailBody)?.[1] ?? "").trim();
+  const resto: string[] = [];
+  for (let j = i + 1; j < linhas.length; j++) {
+    const t = linhas[j];
+    const ehOutroRotulo = [ROTULOS.clinic, ROTULOS.local, ROTULOS.contact, ROTULOS.email, ROTULOS.phone, ROTULOS.subject]
+      .some((r) => r.test(t.trim()));
+    if (ehOutroRotulo || ehCabecalhoDeSecao(t)) break;
+    resto.push(t);
+  }
+  const corpo = [primeira, ...resto].join("\n").trim();
+  return corpo || null;
+}
+
 export function parseLeadList(texto: string, paisPadrao = "US"): ParsedLead[] {
   const out: ParsedLead[] = [];
   for (const bloco of dividirBlocos(texto)) {
@@ -111,6 +145,8 @@ export function parseLeadList(texto: string, paisPadrao = "US"): ParsedLead[] {
     const contactM = valorDoRotulo(linhas, ROTULOS.contact);
     const emailM = valorDoRotulo(linhas, ROTULOS.email);
     const phoneM = valorDoRotulo(linhas, ROTULOS.phone);
+    const subjectM = valorDoRotulo(linhas, ROTULOS.subject);
+    const emailBody = corpoDoEmail(linhas);
 
     // Sem rótulo de nome: usa a 1ª linha que não seja outro rótulo nem cabeçalho.
     let clinic = clinicM.valor;
@@ -152,6 +188,8 @@ export function parseLeadList(texto: string, paisPadrao = "US"): ParsedLead[] {
       country,
       email: email ? email.toLowerCase() : null,
       phone,
+      subject: subjectM.valor ? subjectM.valor.slice(0, 200) : null,
+      emailBody,
       raw: bloco,
       warnings,
     });

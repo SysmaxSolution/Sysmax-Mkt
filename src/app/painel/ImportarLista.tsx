@@ -12,6 +12,7 @@ import { useState } from "react";
 type Item = {
   clinic: string; contact: string | null; city: string | null; country: string;
   email: string | null; phone: string | null; warnings: string[]; existing: boolean;
+  subject?: string | null; emailBody?: string | null;
 };
 
 const PAISES = [
@@ -73,7 +74,8 @@ export default function ImportarLista({ token, onImportou }: { token: string; on
       const d = await res.json();
       if (!d.ok) { setMsg({ kind: "err", text: d.error ?? "Não consegui importar." }); return; }
       const extra = d.pulados ? ` ${d.pulados} já estavam cadastradas e foram puladas.` : "";
-      setMsg({ kind: "ok", text: `${d.criados} clínica(s) importada(s).${extra} Já aparecem na aba Prospectos.` });
+      const prontos = d.rascunhos ? ` ${d.rascunhos} já vieram com o e-mail escrito, é só conferir e enviar.` : "";
+      setMsg({ kind: "ok", text: `${d.criados} clínica(s) importada(s).${extra}${prontos} Já aparecem na aba Prospectos.` });
       setItens(null); setTexto(""); onImportou();
     } catch {
       setMsg({ kind: "err", text: "Falha de rede ao importar." });
@@ -86,8 +88,9 @@ export default function ImportarLista({ token, onImportou }: { token: string; on
     <section className="novo">
       <p className="nvhint">
         Cole aqui a lista que você montou com a sua IA. Eu leio, mostro o que entendi para você conferir,
-        e só importo depois que você aprovar. Funciona com o formato que você já usa — <b>Nome da clínica</b>,
-        <b> Local</b>, <b>Responsável</b>, <b>E-mail</b> — separado por <b>=</b> ou linha em branco.
+        e só importo depois que você aprovar. Funciona com o formato que a sua IA entrega — <b>Nome da clínica</b>,
+        <b> Local</b>, <b>Responsável</b>, <b>E-mail</b>, e também <b>Assunto e-mail</b> e <b>Texto e-mail</b>.
+        Quando o texto vier junto, a clínica já entra com a mensagem escrita: você confere e envia, sem copiar e colar.
       </p>
 
       {!itens && (
@@ -126,6 +129,7 @@ export default function ImportarLista({ token, onImportou }: { token: string; on
                     {i.contact ? ` · ${i.contact}` : ""}
                   </span>
                   <span className="impsub">{i.email ?? "sem e-mail"}{i.phone ? ` · ${i.phone}` : ""}</span>
+                  {i.emailBody && <span className="impok">e-mail já redigido: &quot;{(i.subject ?? "").slice(0, 60)}&quot;</span>}
                   {i.existing && <span className="impwarn">já cadastrada no painel</span>}
                   {i.warnings.map((w) => <span className="impwarn" key={w}>{w}</span>)}
                 </span>

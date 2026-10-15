@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { isAuthorizedViewer } from "@/lib/viewer-auth";
 import { salesDb } from "@/lib/supabase";
 import { parseLeadList, type ParsedLead } from "@/lib/parse-leads";
-import { cleanEmail, cleanText, normalizePhoneBR } from "@/crm/lead-intake";
+import { cleanEmail, cleanText } from "@/crm/lead-intake";
+import { montarTelefone } from "@/lib/phone-intl";
 
 // ===========================================================================
 // POST /api/painel/importar — a equipe cola a lista que extraiu com a IA dela
@@ -22,13 +23,13 @@ const LIMITE = 200;
 type Item = {
   clinic: string; contact: string | null; city: string | null;
   country: string; email: string | null; phone: string | null;
+  subject?: string | null; emailBody?: string | null;
 };
 
 function normalizaFone(raw: string | null, country: string): string | null {
   if (!raw) return null;
-  if (country === "BR") return normalizePhoneBR(raw);
-  const d = raw.replace(/\D/g, "").replace(/^0+/, "");
-  return d.length >= 8 && d.length <= 15 ? d : null;
+  const r = montarTelefone(raw, country);
+  return r.ok ? r.e164 : null;
 }
 
 // Marca o que já existe no CRM, para a prévia avisar antes de duplicar.
@@ -85,6 +86,7 @@ export async function POST(req: NextRequest) {
       itens: usar.map((l) => ({
         clinic: l.clinic, contact: l.contact, city: l.city, country: l.country,
         email: l.email, phone: l.phone,
+        subject: l.subject, emailBody: l.emailBody,
         warnings: l.warnings,
         existing: jaExiste(existentes, l.email, l.phone),
       })),
@@ -106,7 +108,14 @@ export async function POST(req: NextRequest) {
     const email = cleanEmail(o.email);
     const phone = normalizaFone(cleanText(o.phone, 40) || null, country);
     if (!email && !phone) continue; // sem forma de contato não serve
-    itens.push({ clinic, contact: cleanText(o.contact, 120) || null, city: cleanText(o.city, 80) || null, country, email, phone });
+    itens.push({
+      clinic,
+      contact: cleanText(o.contact, 120) || null,
+      city: cleanText(o.city, 80) || null,
+      country, email, phone,
+      subject: cleanText(o.subject, 200) || null,
+      emailBody: typeof o.emailBody === "string" ? o.emailBody.slice(0, 20_000) : null,
+    });
   }
   if (!itens.length) {
     return NextResponse.json({ ok: false, error: "Nenhuma das clínicas tem e-mail ou telefone válido." }, { status: 422 });
@@ -115,6 +124,7 @@ export async function POST(req: NextRequest) {
   const existentes = await marcarExistentes(itens);
   const agora = new Date().toISOString();
   const novos: Record<string, unknown>[] = [];
+  const comTexto: Item[] = []; // mesma ordem de `novos`, p/ casar com os ids
   const vistos = new Set<string>();
   let pulados = 0;
 
@@ -122,6 +132,7 @@ export async function POST(req: NextRequest) {
     const chave = `${i.email ?? ""}|${i.phone ?? ""}`;
     if (vistos.has(chave) || jaExiste(existentes, i.email, i.phone)) { pulados++; continue; }
     vistos.add(chave);
+    comTexto.push(i);
     novos.push({
       company_name: i.clinic,
       name: i.contact,
@@ -142,9 +153,35 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, criados: 0, pulados, message: "Todas já estavam cadastradas." });
   }
 
-  const { data, error } = await salesDb.from("leads").insert(novos).select("id");
+  const { data, error } = await salesDb.from("leads").insert(novos).select("id,email");
   if (error) {
     return NextResponse.json({ ok: false, error: "Não consegui gravar as clínicas. Tente de novo." }, { status: 500 });
   }
-  return NextResponse.json({ ok: true, criados: data?.length ?? 0, pulados });
+
+  // A IA da equipe já entrega o e-mail redigido por clínica. Guardamos como
+  // rascunho para o cartão abrir com o texto pronto — ela confere e envia, sem
+  // copiar e colar. Rascunho não dispara nada sozinho: o worker só toca
+  // 'approved', e o envio pelo painel é sempre um clique dela.
+  //
+  // O casamento é pelo e-mail, NUNCA pela ordem do retorno do insert: ordem não
+  // é garantida e trocar os pares colaria o texto de uma clínica na ficha de
+  // outra — ou seja, mandar a mensagem errada para o destinatário errado.
+  const criados = data ?? [];
+  const textoPorEmail = new Map<string, Item>();
+  for (const i of comTexto) if (i.email) textoPorEmail.set(i.email.toLowerCase(), i);
+
+  const rascunhos = criados
+    .map((row) => ({ row, item: row.email ? textoPorEmail.get(String(row.email).toLowerCase()) : undefined }))
+    .filter((p): p is { row: { id: string; email: string }; item: Item } => !!p.item && !!(p.item.subject || p.item.emailBody))
+    .map(({ row, item }) => ({
+      lead_id: row.id,
+      channel: "email",
+      subject: item.subject ?? "",
+      body: item.emailBody ?? "",
+      status: "draft",
+      scheduled_for: new Date().toISOString(),
+    }));
+  if (rascunhos.length) await salesDb.from("outbox").insert(rascunhos);
+
+  return NextResponse.json({ ok: true, criados: criados.length, pulados, rascunhos: rascunhos.length });
 }

@@ -854,6 +854,10 @@ const CSS = `
   .impsub{font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis}
   .impwarn{align-self:flex-start;font-size:10.5px;font-weight:750;color:var(--call);background:var(--call-bg);padding:2px 7px;border-radius:5px;margin-top:2px}
   .mailbtn.nodraft{display:inline-block;margin:10px 0 0;padding:7px 14px;font-size:12.5px}
+  .fonechk{display:block;margin:-6px 0 10px;font-size:11.5px;font-weight:650;color:var(--accent-ink)}
+  .fonechk.warn{color:var(--call)}
+  .fonechk.err{color:var(--st-lost)}
+  .impok{align-self:flex-start;font-size:10.5px;font-weight:750;color:var(--wa);background:var(--wa-bg);padding:2px 7px;border-radius:5px;margin-top:2px}
   @media (max-width:620px){
     .nvgrid{grid-template-columns:1fr}
     .diarow{grid-template-columns:1fr auto;row-gap:2px}

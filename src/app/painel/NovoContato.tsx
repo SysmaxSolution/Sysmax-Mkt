@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { montarTelefone } from "@/lib/phone-intl";
 
 // ===========================================================================
 // Contato que a equipe encontrou por conta própria: cadastra e dispara no mesmo
@@ -71,13 +72,14 @@ export default function NovoContato({ token, onQuota }: { token: string; onQuota
 
   async function abrirWhatsapp() {
     if (!f.phone) { setMsg({ kind: "err", text: "Preencha o WhatsApp da clínica." }); return; }
+    const num = montarTelefone(f.phone, f.country);
+    if (!num.ok) { setMsg({ kind: "err", text: num.erro }); return; }
     setBusy(true); setMsg(null);
     try {
       const lead = await criarLead();
       if (!lead) return;
-      const digits = f.phone.replace(/\D/g, "");
       const texto = body.trim();
-      window.open(`https://wa.me/${digits}${texto ? `?text=${encodeURIComponent(texto)}` : ""}`, "_blank", "noopener");
+      window.open(`https://wa.me/${num.e164}${texto ? `?text=${encodeURIComponent(texto)}` : ""}`, "_blank", "noopener");
       await fetch("/api/painel/contato-manual", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-admin-token": token },
@@ -90,6 +92,9 @@ export default function NovoContato({ token, onQuota }: { token: string; onQuota
   }
 
   const ddi = PAISES.find((p) => p.sigla === f.country)?.ddi;
+  // Mostra o número final ANTES de abrir o WhatsApp: em 15/10 um telefone
+  // brasileiro foi cadastrado com o país US e o link abriu a conversa errada.
+  const fone = useMemo(() => (f.phone.trim() ? montarTelefone(f.phone, f.country) : null), [f.phone, f.country]);
 
   return (
     <section className="novo">
@@ -127,6 +132,11 @@ export default function NovoContato({ token, onQuota }: { token: string; onQuota
             WhatsApp {ddi && <span className="ddi">código do país: {ddi}</span>}
           </label>
           <input id="nv-phone" className="cinput" value={f.phone} onChange={set("phone")} placeholder={ddi ? ddi + " ..." : ""} />
+          {fone && (fone.ok
+            ? <span className={`fonechk${fone.aviso ? " warn" : ""}`}>
+                {fone.aviso ? fone.aviso : `Vai abrir: ${fone.exibicao}`}
+              </span>
+            : <span className="fonechk err">{fone.erro}</span>)}
         </div>
         <div className="nvf nvf-wide">
           <label className="clabel" htmlFor="nv-notes">Observações (só para nós)</label>
@@ -146,7 +156,9 @@ export default function NovoContato({ token, onQuota }: { token: string; onQuota
         <button className="csend" disabled={busy} onClick={enviarEmail}>
           {busy ? "Aguarde..." : "Cadastrar e enviar e-mail"}
         </button>
-        <button className="cwa" disabled={busy} onClick={abrirWhatsapp}>Cadastrar e abrir WhatsApp</button>
+        <button className="cwa" disabled={busy} onClick={abrirWhatsapp}>
+          {fone?.ok ? `Cadastrar e abrir WhatsApp ${fone.exibicao}` : "Cadastrar e abrir WhatsApp"}
+        </button>
       </div>
       {msg && <p className={`nvmsg nv-${msg.kind}`}>{msg.text}</p>}
     </section>
