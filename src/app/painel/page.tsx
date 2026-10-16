@@ -359,7 +359,10 @@ export default function PainelPage() {
 // Aba de Posts: lote do dia (5 posts + 2 vídeos + 1 anúncio) para a equipe de
 // marketing baixar a arte / copiar a legenda e publicar (IG, status, Facebook).
 // ---------------------------------------------------------------------------
-type PostContent = { headline?: string; caption?: string; hashtags?: string[]; hook?: string; scenes?: string[]; cta?: string; audio?: string; target?: string; budget?: string };
+// `fotos` = caminhos no bucket "material", quando a equipe mandou a foto dela
+// pela aba "Enviar material". Nesse caso a arte gerada não aparece: o que vale
+// é a foto que a pessoa escolheu.
+type PostContent = { headline?: string; caption?: string; hashtags?: string[]; hook?: string; scenes?: string[]; cta?: string; audio?: string; target?: string; budget?: string; fotos?: string[] };
 type CItem = { id: string; type: string; format: string; status: string; assetPath?: string | null; content: PostContent };
 
 function PostsView({ token }: { token: string }) {
@@ -427,6 +430,7 @@ function PostsView({ token }: { token: string }) {
   }
   const legend = (c: PostContent) => [c.caption, (c.hashtags ?? []).join(" ")].filter(Boolean).join("\n\n");
   const imgUrl = (id: string, size: string) => `/api/painel/post-image?id=${id}&size=${size}&t=${encodeURIComponent(token)}`;
+  const fotoUrl = (f: string) => `/api/painel/material-foto?f=${encodeURIComponent(f)}&t=${encodeURIComponent(token)}`;
 
   if (st === "loading") return <p className="sub" style={{ marginTop: 24 }}>Carregando o conteúdo de hoje…</p>;
   if (st === "error") return <p className="notemsg" style={{ marginTop: 24 }}>Não foi possível carregar o conteúdo.</p>;
@@ -464,19 +468,38 @@ function PostsView({ token }: { token: string }) {
 
       <h2 className="secttl">Posts ({d.posts.length})</h2>
       <div className="grid">
-        {d.posts.map((p) => (
+        {d.posts.map((p) => {
+          const fotos = p.content.fotos ?? [];
+          const arte = imgUrl(p.id, p.format === "story" ? "story" : "feed");
+          return (
           <article className="card pcard" key={p.id}>
-            <div className="pill-row"><span className="rec rec-email">{p.format}</span></div>
-            <img className="post-art" src={imgUrl(p.id, p.format === "story" ? "story" : "feed")} alt="arte do post" loading="lazy" />
+            <div className="pill-row">
+              <span className="rec rec-email">{p.format}</span>
+              {!!fotos.length && <span className="rec rec-wa">foto sua</span>}
+            </div>
+            {fotos.length ? (
+              <div className={`postfotos${fotos.length === 1 ? " one" : ""}`}>
+                {fotos.map((f, i) => <img key={f} src={fotoUrl(f)} alt={`foto ${i + 1} do post`} loading="lazy" />)}
+              </div>
+            ) : (
+              <img className="post-art" src={arte} alt="arte do post" loading="lazy" />
+            )}
             <div className="phead">{p.content.headline}</div>
             <pre className="body">{p.content.caption}</pre>
             {!!(p.content.hashtags ?? []).length && <div className="tags">{(p.content.hashtags ?? []).join(" ")}</div>}
             <div className="pactions">
               <button className={`copy${copied === p.id ? " done" : ""}`} onClick={() => copy(p.id, legend(p.content))}>{copied === p.id ? "Copiado ✓" : "Copiar legenda"}</button>
-              <a className="dl" href={imgUrl(p.id, p.format === "story" ? "story" : "feed")} download={`post-${p.id}.png`} target="_blank" rel="noopener noreferrer">Baixar arte</a>
+              {fotos.length
+                ? fotos.map((f, i) => (
+                    <a className="dl" key={f} href={fotoUrl(f)} download={`foto-${i + 1}-${p.id}.jpg`} target="_blank" rel="noopener noreferrer">
+                      {fotos.length === 1 ? "Baixar foto" : `Baixar foto ${i + 1}`}
+                    </a>
+                  ))
+                : <a className="dl" href={arte} download={`post-${p.id}.png`} target="_blank" rel="noopener noreferrer">Baixar arte</a>}
             </div>
           </article>
-        ))}
+        );
+        })}
       </div>
 
       <h2 className="secttl">Vídeos — roteiros ({d.videos.length})</h2>
@@ -887,6 +910,17 @@ const CSS = `
   .tipobtn:hover{border-color:var(--accent)}
   .tipobtn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
   .rmtit{margin:26px 0 12px;font-size:15px;font-weight:750;color:var(--ink);padding-top:18px;border-top:1px solid var(--border)}
+  .fotobtn{display:inline-block;font-size:13px;font-weight:700;border:1px dashed var(--accent);background:var(--surface-2);color:var(--accent-ink);padding:11px 18px;border-radius:9px;cursor:pointer}
+  .fotobtn:hover{background:var(--wa-bg)}
+  .fotobtn input{display:none}
+  .fotogrid{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 2px}
+  .fotoitem{position:relative;width:104px;height:104px;border-radius:9px;overflow:hidden;border:1px solid var(--border);background:var(--surface-2)}
+  .fotoitem img{width:100%;height:100%;object-fit:cover;display:block}
+  .fotodel{position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:999px;border:0;background:rgba(0,0,0,.62);color:#fff;font-size:14px;font-weight:800;line-height:1;cursor:pointer}
+  .fotodel:hover{background:rgba(0,0,0,.82)}
+  .postfotos{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 10px}
+  .postfotos img{width:calc(50% - 4px);border-radius:9px;border:1px solid var(--border);display:block}
+  .postfotos.one img{width:100%}
   .stalewarn{margin:20px 0 0;padding:12px 14px;border-radius:9px;font-size:13px;font-weight:650;line-height:1.5;color:var(--call);background:var(--call-bg);border:1px solid color-mix(in srgb,var(--call) 35%,var(--border))}
   @media (max-width:620px){
     .nvgrid{grid-template-columns:1fr}

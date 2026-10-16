@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { isAuthorizedViewer } from "@/lib/viewer-auth";
 import { salesDb } from "@/lib/supabase";
 import { cleanText } from "@/crm/lead-intake";
-import { sendText } from "@/lib/evolution";
+import { sendText, sendImage } from "@/lib/evolution";
+import { salvarFotos } from "@/lib/material-fotos";
 
 // ===========================================================================
 // POST /api/painel/material — porta de entrada única para o material que a
@@ -16,6 +17,11 @@ import { sendText } from "@/lib/evolution";
 //   post    → content_calendar do dia, e aparece em "Posts do dia"
 //   recado  → WhatsApp do Diretor, e fica registrado em team_notes
 //   numeros → social_metrics, e entra no relatório do mês
+//
+// Post e recado aceitam FOTO (até 4). Antes a arte era só a gerada pelo
+// post-image; desde que o gerador parou, a equipe produz o material fora e a
+// foto não tinha porta de entrada — ela mandava no WhatsApp e alguém reanexava
+// à mão (pergunta de 2026-10-16). Agora sobe junto do texto.
 //
 // O terceiro tipo existe porque eu tinha quebrado o combinado: criei uma aba
 // separada só para lançar números de rede, quando o acordo era ela colar tudo
@@ -75,8 +81,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, destino: "Relatório do mês" });
   }
 
-  if (!texto) return NextResponse.json({ ok: false, error: "Cole o material no campo." }, { status: 400 });
+  const fotosEnviadas = Array.isArray(b?.fotos) ? (b.fotos as unknown[]) : [];
+  if (!texto && !fotosEnviadas.length) {
+    return NextResponse.json({ ok: false, error: "Cole o material no campo ou anexe uma foto." }, { status: 400 });
+  }
   if (texto.length > 40_000) return NextResponse.json({ ok: false, error: "Material grande demais. Divida em partes." }, { status: 413 });
+
+  const { caminhos: fotos, erro: erroFoto } = await salvarFotos(fotosEnviadas);
+  if (erroFoto) return NextResponse.json({ ok: false, error: erroFoto }, { status: 400 });
 
   if (tipo === "post") {
     // Entra no lote de HOJE para aparecer no topo de "Posts do dia" — o lote
@@ -91,12 +103,19 @@ export async function POST(req: NextRequest) {
         caption: texto,
         origem: `enviado por ${autor} pelo painel`,
         ...(obs ? { observacao: obs } : {}),
+        // A foto da equipe substitui a arte gerada em "Posts do dia".
+        ...(fotos.length ? { fotos } : {}),
       }),
       scheduled_for: hojeISO(),
       status: "approved",
     });
     if (error) return NextResponse.json({ ok: false, error: "Não consegui guardar o post." }, { status: 500 });
-    return NextResponse.json({ ok: true, destino: "Posts do dia" });
+    return NextResponse.json({
+      ok: true,
+      destino: fotos.length
+        ? `Posts do dia, com ${fotos.length === 1 ? "a sua foto" : `as suas ${fotos.length} fotos`}`
+        : "Posts do dia",
+    });
   }
 
   // recado — chega no WhatsApp do Diretor e fica registrado em team_notes.
@@ -114,9 +133,23 @@ export async function POST(req: NextRequest) {
       // sem log, "o WhatsApp falhou" vira um mistério na próxima vez.
       console.error("[material] WhatsApp ao Diretor falhou:", err instanceof Error ? err.message : err);
     }
+    // As fotos vão atrás do texto, uma a uma. Reaproveita o base64 que já
+    // chegou na requisição — não precisa baixar de volta do bucket.
+    for (const f of fotosEnviadas) {
+      if (typeof f !== "string") continue;
+      const m = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(f.trim());
+      if (!m) continue;
+      try {
+        await sendImage(fone, m[2], m[1]);
+      } catch (err) {
+        console.error("[material] foto do recado não foi ao Diretor:", err instanceof Error ? err.message : err);
+      }
+    }
   }
 
-  const { error } = await salesDb.from("team_notes").insert({ autor, titulo, texto, obs, entregue });
+  const { error } = await salesDb
+    .from("team_notes")
+    .insert({ autor, titulo, texto, obs, entregue, fotos: fotos.length ? fotos : null });
   if (error) return NextResponse.json({ ok: false, error: "Não consegui registrar o recado." }, { status: 500 });
   return NextResponse.json({
     ok: true,
