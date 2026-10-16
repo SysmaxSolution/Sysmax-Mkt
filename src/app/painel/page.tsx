@@ -358,10 +358,23 @@ export default function PainelPage() {
   // Instagram sai (rede social so entra em relatorio) e "Ligacao" sai por ser
   // a mesma coisa que o WhatsApp na pratica. Sobram as duas pracas, que e como
   // ela realmente divide o trabalho: telefone/zap aqui, e-mail la fora.
-  const praca = (r: Row) => ((r.country ?? "BR") === "BR" ? "br" : "exterior");
+  // Tres destinos, porque sao tres formas de trabalhar:
+  //   br        -> Brasil com WhatsApp: o caminho dela, zap e ligacao
+  //   email_br  -> Brasil SEM WhatsApp mas com e-mail: decisao do Diretor em
+  //                16/10, manter o e-mail para quem nao atende zap. Ali o
+  //                e-mail e o UNICO contato que existe
+  //   exterior  -> fora do Brasil: e-mail
+  // Quem e do Brasil, nao tem WhatsApp e nao tem e-mail nao entra em nenhum
+  // dos tres: so aparece em "Todas", porque nao ha por onde falar.
+  const praca = (r: Row) => {
+    if ((r.country ?? "BR") !== "BR") return "exterior";
+    if (r.waValido === true) return "br";
+    return r.email ? "email_br" : "sem_canal";
+  };
+  const soEmail = (r: Row) => praca(r) === "email_br";
   const pracaCounts = useMemo(() => {
-    const c = { br: 0, exterior: 0 };
-    for (const r of rows) c[praca(r) as "br" | "exterior"]++;
+    const c: Record<string, number> = { br: 0, email_br: 0, exterior: 0, sem_canal: 0 };
+    for (const r of rows) c[praca(r)]++;
     return c;
   }, [rows]);
   const visible = useMemo(() => {
@@ -434,6 +447,7 @@ export default function PainelPage() {
         <div className="kpis">
           {kpi("all", total, "Todas")}
           {kpi("br", pracaCounts.br, "WhatsApp · Brasil", "wa")}
+          {kpi("email_br", pracaCounts.email_br, "E-mail · Brasil", "email")}
           {kpi("exterior", pracaCounts.exterior, "E-mail · Exterior", "email")}
           <div className={`kpi kpi-won${statusFilter === "won" ? " active" : ""}`} onClick={() => setStatusFilter((s) => (s === "won" ? "all" : "won"))}>
             <div className="n tnum">{statusCounts.won ?? 0}</div>
@@ -517,7 +531,7 @@ export default function PainelPage() {
                   {waPhone && r.waValido === false && <span className="chip chip-off">sem WhatsApp</span>}
                   {waPhone && r.waValido === null && <span className="chip chip-off">WhatsApp não verificado</span>}
                   {!waPhone && <span className="chip chip-off">sem telefone</span>}
-                  {(estrangeira || verTudo) && r.email && (
+                  {(estrangeira || soEmail(r) || verTudo) && r.email && (
                     <button className={`chip chip-em${copied === `mail-${r.leadId}` ? " done" : ""}`}
                       onClick={() => copy(`mail-${r.leadId}`, r.email ?? "")}>
                       {copied === `mail-${r.leadId}` ? "E-mail copiado ✓" : r.email}
@@ -653,7 +667,7 @@ export default function PainelPage() {
                     <div className="msg-head">
                       <span className={`msg-ch ch-${m.channel}`}>{m.channelLabel}{j === 0 ? " · recomendado" : ""}</span>
                       <button className={`copy${copied === m.id ? " done" : ""}`} onClick={() => copy(m.id, (m.subject ? "Assunto: " + m.subject + "\n\n" : "") + m.body)}>{copied === m.id ? "Copiado ✓" : "Copiar"}</button>
-                      {m.channel === "email" && r.email && (estrangeira || verTudo) && (
+                      {m.channel === "email" && r.email && (estrangeira || soEmail(r) || verTudo) && (
                         <button className="mailbtn" onClick={() => openCompose(r.leadId, m.subject ?? "", m.body)}>
                           {composeFor === r.leadId ? "Editando..." : "Escrever e enviar"}
                         </button>
@@ -663,7 +677,7 @@ export default function PainelPage() {
                     <pre className="body">{m.body}</pre>
                   </div>
                 ))}
-                {!r.messages.length && r.email && (estrangeira || verTudo) && composeFor !== r.leadId && (
+                {!r.messages.length && r.email && (estrangeira || soEmail(r) || verTudo) && composeFor !== r.leadId && (
                   <button className="mailbtn nodraft" onClick={() => openCompose(r.leadId, "", "")}>
                     Escrever e enviar e-mail
                   </button>
