@@ -75,6 +75,46 @@ export function buildUnsubscribeUrl(leadId: string, email: string): string {
 
 export type SendEmailResult = { skipped: true; reason: string } | { skipped: false; id: string };
 
+// A captacao viu o e-mail como a clinica recebe (16/10) e apontou: chega sem
+// nenhuma imagem, nem a marca. Para quem abre, parece mensagem de alguem sem
+// empresa por tras. A marca entra na ASSINATURA, nao como banner no topo:
+// banner no alto e o formato de newsletter promocional, e a gente ja sabe que
+// o Gmail carimba esse envio como Promocoes. Assinatura e formato de e-mail
+// de pessoa -- o mesmo conteudo, sem reforcar o carimbo.
+//
+// O texto puro continua sendo enviado junto (multipart/alternative): cliente
+// que nao mostra imagem, ou leitor de tela, recebe a mensagem inteira. A
+// imagem tem alt com o nome da empresa pelo mesmo motivo.
+const ESCAPES: Record<string, string> = {
+  "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+};
+const escapeHtml = (t: string) => t.replace(/[&<>"']/g, (c) => ESCAPES[c]);
+
+function logoUrl(): string | null {
+  try {
+    return `${publicBase()}/marca/sysmax.png`;
+  } catch {
+    return null; // sem base publica a marca simplesmente nao entra
+  }
+}
+
+function montarHtml(texto: string, aviso: string, unsubUrl: string): string {
+  const corpo = escapeHtml(texto.trim()).replace(/\r?\n/g, "<br>");
+  const logo = logoUrl();
+  const marca = logo
+    ? `<img src="${logo}" alt="Sysmax Software" width="200" height="40" style="display:block;border:0;outline:none;text-decoration:none">`
+    : `<span style="font:600 15px/1.4 Arial,Helvetica,sans-serif;color:#0f172a">Sysmax Software</span>`;
+  return [
+    '<div style="font:15px/1.6 Arial,Helvetica,sans-serif;color:#0f172a;max-width:560px">',
+    `<div>${corpo}</div>`,
+    '<div style="margin:26px 0 0;padding:18px 0 0;border-top:1px solid #e2e8f0">',
+    marca,
+    `<p style="margin:12px 0 0;font:12px/1.5 Arial,Helvetica,sans-serif;color:#64748b">${escapeHtml(aviso)}<br>`,
+    `<a href="${unsubUrl}" style="color:#64748b">Se nao quiser mais receber, cancele aqui.</a></p>`,
+    "</div></div>",
+  ].join("");
+}
+
 export async function sendEmail(args: {
   to: string;
   subject: string;
@@ -95,10 +135,11 @@ export async function sendEmail(args: {
   }
 
   const unsubUrl = buildUnsubscribeUrl(leadId, to);
+  const aviso = `Você recebeu este e-mail porque a ${process.env.MAIL_FROM_NAME ?? "Sysmax Software"} identificou sua clínica como possível interessada no SYSVETMAX (contato profissional B2B).`;
   const body = `${text.trim()}
 
 —
-Você recebeu este e-mail porque a ${process.env.MAIL_FROM_NAME ?? "Sysmax Software"} identificou sua clínica como possível interessada no SYSVETMAX (contato profissional B2B).
+${aviso}
 Se não quiser mais receber, cancele aqui: ${unsubUrl}`;
 
   const payload: Record<string, unknown> = {
@@ -106,6 +147,7 @@ Se não quiser mais receber, cancele aqui: ${unsubUrl}`;
     to: [to],
     subject,
     text: body,
+    html: montarHtml(text, aviso, unsubUrl),
     headers: {
       "List-Unsubscribe": `<${unsubUrl}>`,
       "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
