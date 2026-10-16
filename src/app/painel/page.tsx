@@ -376,6 +376,10 @@ export default function PainelPage() {
 
         <div className="grid">
           {visible.map((r, i) => {
+            // E-mail e caminho de EXTERIOR. No Brasil ela trabalha por telefone
+            // e zap -- "nao vou usar isso no Brasil" (16/10). O compositor de
+            // e-mail some dos cartoes brasileiros e fica nos de fora.
+            const estrangeira = (r.country ?? "BR") !== "BR";
             const primary = primaryOf(r);
             const ordered = primary ? [primary, ...r.messages.filter((m) => m !== primary)] : [];
             const waPhone = r.phone ? r.phone.replace(/\D/g, "") : null;
@@ -482,7 +486,7 @@ export default function PainelPage() {
                     <div className="msg-head">
                       <span className={`msg-ch ch-${m.channel}`}>{m.channelLabel}{j === 0 ? " · recomendado" : ""}</span>
                       <button className={`copy${copied === m.id ? " done" : ""}`} onClick={() => copy(m.id, (m.subject ? "Assunto: " + m.subject + "\n\n" : "") + m.body)}>{copied === m.id ? "Copiado ✓" : "Copiar"}</button>
-                      {m.channel === "email" && r.email && (
+                      {m.channel === "email" && r.email && estrangeira && (
                         <button className="mailbtn" onClick={() => openCompose(r.leadId, m.subject ?? "", m.body)}>
                           {composeFor === r.leadId ? "Editando..." : "Escrever e enviar"}
                         </button>
@@ -492,7 +496,7 @@ export default function PainelPage() {
                     <pre className="body">{m.body}</pre>
                   </div>
                 ))}
-                {!r.messages.length && r.email && composeFor !== r.leadId && (
+                {!r.messages.length && r.email && estrangeira && composeFor !== r.leadId && (
                   <button className="mailbtn nodraft" onClick={() => openCompose(r.leadId, "", "")}>
                     Escrever e enviar e-mail
                   </button>
