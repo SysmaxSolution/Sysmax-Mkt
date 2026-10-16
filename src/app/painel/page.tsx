@@ -456,8 +456,8 @@ export default function PainelPage() {
           {testeAberto && (
           <div className="novo" style={{ maxWidth: "100%", margin: "0 0 14px" }}>
             <p className="nvhint">
-              Escreva e mande para você mesma. Chega no e-mail da equipe com <b>[TESTE]</b> no assunto,
-              com o mesmo rodapé e o mesmo link de descadastro do envio real. <b>Nenhuma clínica recebe nada</b>,
+              Escreva e mande para você mesma. Chega no e-mail da equipe <b>exatamente</b> como chegaria na clínica — mesmo assunto,
+              mesmo rodapé, mesmo link de descadastro. <b>Nenhuma clínica recebe nada</b>,
               e isso não gasta do limite do dia.
             </p>
             <label className="clabel" htmlFor="teste-subj">Assunto</label>

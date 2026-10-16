@@ -65,7 +65,10 @@ export async function POST(req: NextRequest) {
   if (p?.teste === true) {
     const destino = (process.env.TEAM_TEST_EMAIL ?? "sysvetmax@gmail.com").trim();
     try {
-      const r = await sendEmail({ to: destino, subject: `[TESTE] ${subject}`, text: body, leadId });
+      // Assunto SEM prefixo: o teste tem que ser identico ao envio real. O
+      // "[TESTE]" que havia aqui entrava no assunto que o Gmail classifica e
+      // podia ser o proprio motivo de a mensagem cair em Promocoes (16/10).
+      const r = await sendEmail({ to: destino, subject, text: body, leadId });
       // leadId vai junto de proposito: assim o link de descadastro sai igual
       // ao real e ela ve a mensagem exatamente como a clinica veria.
       if (r.skipped) {
