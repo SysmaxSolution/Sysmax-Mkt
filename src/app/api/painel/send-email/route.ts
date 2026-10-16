@@ -94,7 +94,9 @@ export async function POST(req: NextRequest) {
       if (r.skipped) {
         return NextResponse.json({ ok: false, error: "O e-mail de teste esta na lista de opt-out." }, { status: 422 });
       }
-      return NextResponse.json({ ok: true, teste: true, to: destino });
+      // id do provedor volta junto: sem ele nao da para conferir depois o que
+      // foi realmente entregue (16/10, marca que nao aparecia no cliente).
+      return NextResponse.json({ ok: true, teste: true, to: destino, id: r.id });
     } catch {
       return NextResponse.json({ ok: false, error: "Nao consegui enviar o teste." }, { status: 502 });
     }

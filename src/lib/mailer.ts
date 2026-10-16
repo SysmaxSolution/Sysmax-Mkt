@@ -132,12 +132,17 @@ function montarHtml(texto: string, aviso: string, unsubUrl: string, embutida: bo
   const marca = src
     ? `<img src="${src}" alt="Sysmax Software" width="200" height="40" style="display:block;border:0;outline:none;text-decoration:none">`
     : `<span style="font:600 15px/1.4 Arial,Helvetica,sans-serif;color:#0f172a">Sysmax Software</span>`;
+  // A marca vai NO TOPO, como papel timbrado. Estava no rodape e a captacao
+  // continuava sem ver (16/10): o Gmail recolhe o fim da mensagem atras do
+  // "..." quando o trecho se repete entre e-mails parecidos -- e assinatura e
+  // exatamente o trecho que se repete. No alto ninguem precisa expandir nada.
+  // Continua discreta: 200px de largura, sem banner, sem cor de fundo.
   return [
     '<div style="font:15px/1.6 Arial,Helvetica,sans-serif;color:#0f172a;max-width:560px">',
+    `<div style="margin:0 0 22px">${marca}</div>`,
     `<div>${corpo}</div>`,
     '<div style="margin:26px 0 0;padding:18px 0 0;border-top:1px solid #e2e8f0">',
-    marca,
-    `<p style="margin:12px 0 0;font:12px/1.5 Arial,Helvetica,sans-serif;color:#64748b">${escapeHtml(aviso)}<br>`,
+    `<p style="margin:0;font:12px/1.5 Arial,Helvetica,sans-serif;color:#64748b">${escapeHtml(aviso)}<br>`,
     `<a href="${unsubUrl}" style="color:#64748b">Se nao quiser mais receber, cancele aqui.</a></p>`,
     "</div></div>",
   ].join("");
