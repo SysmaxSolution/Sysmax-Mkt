@@ -19,7 +19,7 @@ import { diaDeTrabalho } from "@/lib/agenda-br";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-type Body = { leadId?: string; subject?: string; body?: string; sender?: string; teste?: boolean };
+type Body = { leadId?: string; subject?: string; body?: string; sender?: string; teste?: boolean; testeTo?: string };
 
 export async function POST(req: NextRequest) {
   if (!isAuthorizedViewer(req)) return new NextResponse("unauthorized", { status: 401 });
@@ -63,7 +63,27 @@ export async function POST(req: NextRequest) {
   // dominio: nao e prospeccao, e conferencia. O destino e fixo no ambiente,
   // para o teste nunca virar porta de envio para endereco arbitrario.
   if (p?.teste === true) {
-    const destino = (process.env.TEAM_TEST_EMAIL ?? "sysvetmax@gmail.com").trim();
+    const padrao = (process.env.TEAM_TEST_EMAIL ?? "sysvetmax@gmail.com").trim().toLowerCase();
+    const pedido = (p?.testeTo ?? "").trim().toLowerCase();
+    // Caixa diferente da nossa serve para um teste limpo: o Gmail aprende por
+    // destinatario, e a caixa que ja viu varias mensagens nossas tende a
+    // repetir a classificacao anterior (16/10, tudo caindo em Promocoes).
+    const destino = pedido || padrao;
+    if (pedido && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(pedido)) {
+      return NextResponse.json({ ok: false, error: "E-mail de destino invalido." }, { status: 400 });
+    }
+    // Isencao de cota vale SO para a nossa propria caixa. Sem isso, "teste"
+    // com destino livre viraria caminho para furar o limite de 40 por dia.
+    if (destino !== padrao) {
+      const q = await emailQuotaToday();
+      if (q.remaining <= 0) {
+        return NextResponse.json({
+          ok: false,
+          error: `O limite de ${q.cap} e-mails de hoje ja foi usado. Teste para a nossa propria caixa continua liberado.`,
+          quota: q,
+        }, { status: 429 });
+      }
+    }
     try {
       // Assunto SEM prefixo: o teste tem que ser identico ao envio real. O
       // "[TESTE]" que havia aqui entrava no assunto que o Gmail classifica e

@@ -171,7 +171,7 @@ export default function PainelPage() {
   // com e-mail, e no Brasil esses cartões quase não aparecem. Conferir o
   // próprio e-mail não pode depender de achar a clínica certa.
   const [testeAberto, setTesteAberto] = useState(false);
-  const [teste, setTeste] = useState({ subject: "", body: "" });
+  const [teste, setTeste] = useState({ subject: "", body: "", to: "" });
   const [testando, setTestando] = useState(false);
   const [agendaAberta, setAgendaAberta] = useState<string | null>(null);
   const [notaAberta, setNotaAberta] = useState<string | null>(null);
@@ -352,7 +352,7 @@ export default function PainelPage() {
       const res = await fetch("/api/painel/send-email", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-admin-token": token },
-        body: JSON.stringify({ subject: teste.subject, body: teste.body, teste: true }),
+        body: JSON.stringify({ subject: teste.subject, body: teste.body, teste: true, ...(teste.to.trim() ? { testeTo: teste.to.trim() } : {}) }),
       });
       const d = await res.json().catch(() => ({ ok: res.ok }));
       if (!d.ok) { setNote(d.error ?? "Não consegui enviar o teste."); return; }
@@ -496,6 +496,9 @@ export default function PainelPage() {
               mesmo rodapé, mesmo link de descadastro. <b>Nenhuma clínica recebe nada</b>,
               e isso não gasta do limite do dia.
             </p>
+            <label className="clabel" htmlFor="teste-to">Mandar para (vazio = e-mail da equipe)</label>
+            <input id="teste-to" className="cinput" value={teste.to} maxLength={160} placeholder="deixe vazio, ou use outra caixa sua para um teste limpo"
+              onChange={(e) => setTeste((t) => ({ ...t, to: e.target.value }))} />
             <label className="clabel" htmlFor="teste-subj">Assunto</label>
             <input id="teste-subj" className="cinput" value={teste.subject} maxLength={200}
               onChange={(e) => setTeste((t) => ({ ...t, subject: e.target.value }))} />
