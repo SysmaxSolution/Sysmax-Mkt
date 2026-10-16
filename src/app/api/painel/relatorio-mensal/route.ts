@@ -52,11 +52,12 @@ export async function GET(req: NextRequest) {
   const j = janela(mes);
   if (!j) return NextResponse.json({ ok: false, error: "Mês inválido. Use AAAA-MM." }, { status: 400 });
 
-  const [enviosRes, novasRes, socialRes, funilRes] = await Promise.all([
+  const [enviosRes, novasRes, socialRes, funilRes, cliquesRes] = await Promise.all([
     salesDb.from("outbox").select("channel,approved_by").eq("status", "sent").gte("sent_at", j.de).lt("sent_at", j.ate),
     salesDb.from("leads").select("id,country").eq("source", "manual").gte("discovered_at", j.de).lt("discovered_at", j.ate),
     salesDb.from("social_metrics").select("canal,publicacoes,alcance,dia,fotos,conferir,investimento_centavos").gte("dia", j.de.slice(0, 10)).lt("dia", j.ate.slice(0, 10)).order("dia", { ascending: false }),
     salesDb.from("leads").select("stage").gte("qualified_at", j.de).lt("qualified_at", j.ate),
+    salesDb.from("link_clicks").select("campanha").gte("dia", j.de.slice(0, 10)).lt("dia", j.ate.slice(0, 10)),
   ]);
 
   const envios = (enviosRes.data ?? []) as { channel: string; approved_by: string | null }[];
@@ -101,6 +102,17 @@ export async function GET(req: NextRequest) {
       alcance: s.alcance,
     }));
 
+  // Cliques nos links /ir/<campanha> — a unica medicao que temos do site, que
+  // e estatico e nao tem analytics.
+  const cliquesPorCampanha: Record<string, number> = {};
+  for (const c of (cliquesRes.data ?? []) as { campanha: string }[]) {
+    cliquesPorCampanha[c.campanha] = (cliquesPorCampanha[c.campanha] ?? 0) + 1;
+  }
+  const cliques = Object.entries(cliquesPorCampanha)
+    .map(([campanha, total]) => ({ campanha, total }))
+    .sort((a, b) => b.total - a.total);
+  const totalCliques = cliques.reduce((t, c) => t + c.total, 0);
+
   const responderam = (funilRes.data ?? []).length;
   const totalEnvios = envios.length;
 
@@ -128,6 +140,8 @@ export async function GET(req: NextRequest) {
       : null,
     prints,
     aConferir: prints.filter((p) => p.conferir).length,
+    cliques,
+    totalCliques,
     responderam,
     // Taxa de resposta sobre o que saiu no mês. Comparar canais é o objetivo:
     // é esse número que diz onde o dinheiro rende mais.

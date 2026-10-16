@@ -28,6 +28,8 @@ type Dados = {
   redes: { canal: string; publicacoes: number; alcance: number; investido: number }[];
   investido: number;
   custoPorVisualizacao: number | null;
+  cliques: { campanha: string; total: number }[];
+  totalCliques: number;
   prints: Print[];
   aConferir: number;
   responderam: number;
@@ -136,6 +138,9 @@ export default function RelatorioMensal({ token }: { token: string }) {
             {d.taxaResposta !== null && (
               <div className="diacard"><b>{d.taxaResposta}%</b><span>Taxa de resposta</span></div>
             )}
+            {d.totalCliques > 0 && (
+              <div className="diacard"><b>{d.totalCliques}</b><span>Cliques no site</span></div>
+            )}
           </div>
 
           {d.redes.length > 0 && (
@@ -149,6 +154,9 @@ export default function RelatorioMensal({ token }: { token: string }) {
             </div>
           )}
 
+          {d.cliques.length > 0 && (
+            <p className="chint">Cliques por link: {d.cliques.map((c) => `${c.campanha} (${c.total})`).join(" · ")}</p>
+          )}
           {d.porPais.length > 0 && (
             <p className="chint">Clínicas novas por país: {d.porPais.map((p) => `${p.pais} (${p.total})`).join(" · ")}</p>
           )}
