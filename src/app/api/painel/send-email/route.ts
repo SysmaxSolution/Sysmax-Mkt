@@ -4,6 +4,7 @@ import { salesDb } from "@/lib/supabase";
 import { sendEmail } from "@/lib/mailer";
 import { isSuppressed } from "@/lib/suppression";
 import { emailQuotaToday } from "@/lib/send-quota";
+import { diaDeTrabalho } from "@/lib/agenda-br";
 
 // ===========================================================================
 // POST /api/painel/send-email — a equipe comercial dispara o e-mail direto do
@@ -33,6 +34,12 @@ export async function POST(req: NextRequest) {
   if (subject.length > 200) {
     return NextResponse.json({ ok: false, error: "O assunto ficou longo demais (máximo 200 caracteres)." }, { status: 400 });
   }
+  // Regra geral dela (16/10): "clinicas + e-mail SOMENTE 2a a 6a feira. NAO
+  // enviar nada (...) em feriado, de jeito nenhum." Vale para o disparo manual
+  // do painel; rede social nao passa por aqui.
+  const dia = diaDeTrabalho(new Date());
+  if (!dia.ok) return NextResponse.json({ ok: false, error: dia.erro }, { status: 400 });
+
   if (body.length > 20_000) {
     return NextResponse.json({ ok: false, error: "O texto ficou longo demais." }, { status: 400 });
   }

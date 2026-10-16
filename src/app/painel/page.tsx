@@ -282,11 +282,26 @@ export default function PainelPage() {
         : r)));
       setAgendaAberta(null);
       setNote(quando
-        ? `${clinic}: ${tipo === "retorno" ? "retorno" : "reunião"} marcado para ${quandoLegivel(j.quando)}.`
+        ? `${clinic}: ${tipo === "retorno" ? "retorno" : "reunião"} marcado para ${quandoLegivel(j.quando)}.${j.aviso ? " " + j.aviso : ""}`
         : `${clinic}: ${tipo === "retorno" ? "retorno" : "reunião"} apagado.`);
     } catch {
       setNote("Não consegui salvar a data. Tente de novo.");
     }
+  }
+
+  // "se a clínica não responder, pode adaptar para 1 retorno com intervalo de
+  // 1 mês" (regra dela, 16/10). O botão já pula fim de semana e feriado.
+  function daquiUmMes(): string {
+    const d = new Date();
+    d.setMonth(d.getMonth() + 1);
+    d.setHours(9, 0, 0, 0);
+    for (let i = 0; i < 30; i++) {
+      const diaSem = d.getDay();
+      if (diaSem !== 0 && diaSem !== 6) break;
+      d.setDate(d.getDate() + 1);
+    }
+    const z = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}T09:00`;
   }
 
   function openCompose(leadId: string, subject: string, body: string) {
@@ -591,6 +606,11 @@ export default function PainelPage() {
                         const el = document.getElementById(`ag-${r.leadId}-${t}`) as HTMLInputElement | null;
                         salvarAgenda(r.leadId, t, el?.value ?? "", r.clinic);
                       }}>Salvar</button>
+                      {t === "retorno" && (
+                        <button className="ccancel" onClick={() => salvarAgenda(r.leadId, "retorno", daquiUmMes(), r.clinic)}>
+                          Daqui a 1 mês
+                        </button>
+                      )}
                       {(t === "retorno" ? r.retornoEm : r.reuniaoEm) && (
                         <button className="ccancel" onClick={() => salvarAgenda(r.leadId, t, "", r.clinic)}>Apagar</button>
                       )}

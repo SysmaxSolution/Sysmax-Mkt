@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isAuthorizedViewer } from "@/lib/viewer-auth";
 import { salesDb } from "@/lib/supabase";
 import { cleanText } from "@/crm/lead-intake";
+import { diaDeTrabalho } from "@/lib/agenda-br";
 
 // ===========================================================================
 // POST /api/painel/agenda — marca (ou desmarca) retorno e reunião de um lead.
@@ -37,6 +38,7 @@ export async function POST(req: NextRequest) {
   if (!(tipo in TIPOS)) return NextResponse.json({ ok: false, error: "Tipo inválido." }, { status: 400 });
 
   let quando: string | null = null;
+  let aviso: string | null = null;
   if (quandoBruto) {
     // datetime-local vem "2026-10-17T14:00" (às vezes com segundos).
     if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(quandoBruto)) {
@@ -47,10 +49,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Data e hora inválidas." }, { status: 400 });
     }
     quando = iso.toISOString();
+
+    // Regra geral dela (16/10): nada de compromisso em fim de semana ou
+    // feriado, "de jeito nenhum". Fora do horario e so aviso -- reuniao as 18h
+    // com o dono continua valendo.
+    const v = diaDeTrabalho(quando);
+    if (!v.ok) return NextResponse.json({ ok: false, error: v.erro }, { status: 400 });
+    aviso = v.aviso ?? null;
   }
 
   const { error } = await salesDb.from("leads").update({ [TIPOS[tipo]]: quando }).eq("id", leadId);
   if (error) return NextResponse.json({ ok: false, error: "Não consegui salvar." }, { status: 500 });
 
-  return NextResponse.json({ ok: true, quando });
+  return NextResponse.json({ ok: true, quando, aviso });
 }
