@@ -382,11 +382,15 @@ export default function PainelPage() {
   const praca = (r: Row) => {
     if ((r.country ?? "BR") !== "BR") return "exterior";
     if (r.waValido === true) return "br";
-    return r.email ? "email_br" : "sem_canal";
+    if (r.email) return "email_br";
+    // Ideia dela em 16/10: das que nao tem zap nem e-mail, a maioria TEM site
+    // -- e no site se acha contato. Eram 350 paradas; 275 entram aqui.
+    return r.website ? "com_site" : "sem_canal";
   };
   const soEmail = (r: Row) => praca(r) === "email_br";
+  const soSite = (r: Row) => praca(r) === "com_site";
   const pracaCounts = useMemo(() => {
-    const c: Record<string, number> = { br: 0, email_br: 0, exterior: 0, sem_canal: 0 };
+    const c: Record<string, number> = { br: 0, com_site: 0, email_br: 0, exterior: 0, sem_canal: 0 };
     for (const r of rows) c[praca(r)]++;
     return c;
   }, [rows]);
@@ -458,10 +462,11 @@ export default function PainelPage() {
         </header>
 
         <div className="kpis">
-          {kpi("all", total, "Todas")}
           {kpi("br", pracaCounts.br, "WhatsApp · Brasil", "wa")}
+          {kpi("com_site", pracaCounts.com_site, "Com site · buscar contato", "ig")}
           {kpi("email_br", pracaCounts.email_br, "E-mail · Brasil", "email")}
           {kpi("exterior", pracaCounts.exterior, "E-mail · Exterior", "email")}
+          {kpi("all", total, "Todas")}
           <div className={`kpi kpi-won${statusFilter === "won" ? " active" : ""}`} onClick={() => setStatusFilter((s) => (s === "won" ? "all" : "won"))}>
             <div className="n tnum">{statusCounts.won ?? 0}</div>
             <div className="l"><span className="dot won" />Clientes fechados</div>
@@ -559,8 +564,10 @@ export default function PainelPage() {
                   {verTudo && r.instagram && (
                     <a className="chip chip-ig" href={`https://instagram.com/${r.instagram}`} target="_blank" rel="noopener noreferrer">@{r.instagram}</a>
                   )}
-                  {verTudo && r.website && (
-                    <a className="chip chip-web" href={r.website} target="_blank" rel="noopener noreferrer">site</a>
+                  {(soSite(r) || verTudo) && r.website && (
+                    <a className="chip chip-web" href={r.website} target="_blank" rel="noopener noreferrer">
+                      {soSite(r) ? "abrir o site e buscar contato" : "site"}
+                    </a>
                   )}
                 </div>
                 {r.recommended === "whatsapp_manual" && (
