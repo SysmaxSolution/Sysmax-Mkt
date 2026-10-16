@@ -46,6 +46,11 @@ export default function ImportarLista({ token, onImportou }: { token: string; on
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
   async function analisar() {
+    if (!texto.trim()) {
+      setMsg({ kind: "err", text: "O campo está vazio. Cole a lista na caixa grande acima (clique dentro dela primeiro) e clique de novo." });
+      void contarFalha(token, "previa", 0, 0, "campo vazio no navegador");
+      return;
+    }
     setBusy(true); setMsg(null); setItens(null);
     try {
       const res = await fetch("/api/painel/importar", {
@@ -148,10 +153,17 @@ export default function ImportarLista({ token, onImportou }: { token: string; on
             </p>
           )}
           <div className="crow">
-            <button className="csend" disabled={busy || !texto.trim()} onClick={analisar}>
+            {/* Botao desabilitado nao da retorno nenhum: clicar num botao
+                morto parece "enviei" e nao sai nada do navegador. Agora ele
+                sempre responde, mesmo que seja para dizer que falta colar. */}
+            <button className="csend" disabled={busy} onClick={analisar}>
               {busy ? "Lendo..." : "Analisar a lista"}
             </button>
-            {texto.trim() && <span className="chint">{texto.length.toLocaleString("pt-BR")} caracteres colados</span>}
+            <span className="chint">
+              {texto.trim()
+                ? `${texto.length.toLocaleString("pt-BR")} caracteres colados`
+                : "nada colado no campo ainda"}
+            </span>
           </div>
         </>
       )}
@@ -208,6 +220,7 @@ export default function ImportarLista({ token, onImportou }: { token: string; on
       )}
 
       {msg && <p className={`nvmsg nv-${msg.kind}`}>{msg.text}</p>}
+      {msg && <div style={{ height: 1 }} ref={(el) => el?.scrollIntoView({ block: "nearest" })} />}
     </section>
   );
 }
