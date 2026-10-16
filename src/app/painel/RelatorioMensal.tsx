@@ -40,6 +40,7 @@ const CANAIS = [
   { id: "facebook_pagina", nome: "Facebook — página" },
   { id: "facebook_grupos", nome: "Facebook — grupos" },
   { id: "instagram", nome: "Instagram" },
+  { id: "tiktok", nome: "TikTok" },
   { id: "outro", nome: "Outro" },
 ];
 

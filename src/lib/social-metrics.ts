@@ -16,7 +16,10 @@ import { salvarFotos, MAX_FOTOS } from "@/lib/material-fotos";
 //    números que já estavam lá.
 // ===========================================================================
 
-export const CANAIS = ["facebook_pagina", "facebook_grupos", "instagram", "outro"] as const;
+// TikTok entrou em 16/10: a captacao passou a publicar la e perguntou como
+// faria o relatorio. O numero dela vem do proprio app (Perfil > Ferramentas
+// de criador > Analises) e e lancado aqui a mao, igual aos outros canais.
+export const CANAIS = ["facebook_pagina", "facebook_grupos", "instagram", "tiktok", "outro"] as const;
 export type Canal = (typeof CANAIS)[number];
 
 export type EntradaNumeros = {

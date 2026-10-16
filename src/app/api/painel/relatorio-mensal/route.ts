@@ -28,6 +28,7 @@ const LABEL: Record<string, string> = {
 const CANAL_LABEL: Record<string, string> = {
   facebook_pagina: "Facebook — página",
   facebook_grupos: "Facebook — grupos",
+  tiktok: "TikTok",
   instagram: "Instagram",
   outro: "Outro",
 };
