@@ -25,7 +25,7 @@ REGRAS GERAIS:
 - Cada peça foca em UM ângulo (não misture diferenciais). Fale do resultado para a clínica, não da feature.
 - Tom humano e específico. Terminologia CFMV: Tutor, Pet, Médico Veterinário/MV. Sem clichê ("revolucione", "solução completa", "próximo nível"). No máximo 1-2 emojis.
 - Varie os ângulos entre as peças: prontuário por voz+IA, WhatsApp inteligente, financeiro/caixa/NFS-e, fluxo clínico (internação/cirurgia), conformidade CFMV, migração assistida 48h, prova social (case Almavet, clínica real usando IA).
-- Destaque a PROMOÇÃO quando fizer sentido (não em todas): Plano Starter de R$189 por R$149,90/mês, com prontuário por voz IA, WhatsApp IA e caixa. Teste grátis 30 dias, sem cartão.
+- Quando citar preço (não em todas as peças): Plano Starter R$ 189/mês, com prontuário por voz IA, WhatsApp IA e caixa. Nunca anuncie promoção nem valor abaixo da tabela.
 
 PARA CADA POST (5): headline curta (até 60 caracteres, para aparecer na arte), caption de 3-6 linhas para o texto da publicação, 4-6 hashtags do nicho veterinário, e o formato ("feed", "carrossel" ou "story"). Varie os formatos.
 PARA CADA VÍDEO (2): roteiro de reel de 20-40s — gancho de abertura forte, 2-4 cenas curtas descritas, CTA final, e sugestão de áudio/trilha. Também uma caption curta e hashtags.

@@ -40,7 +40,7 @@ Alguns destaques do que o ${BRAND.product} entrega:
 
 E o mais importante para quem já usa outro sistema: a migração completa de dados está inclusa — pets, tutores, históricos, vacinas e anexos vêm junto. Migramos recentemente uma clínica inteira do SimplesVet sem perder um único registro.
 
-Investimento: planos a partir de R$ 149,90/mês, com teste de 30 dias sem cartão e sem fidelidade.
+Investimento: planos a partir de R$ 189/mês, com teste de 30 dias sem cartão e sem fidelidade.
 
 Nossa proposta (sem compromisso): uma reunião remota de 10 a 15 minutos para nos conhecermos, ouvirmos a rotina de vocês e fazermos o levantamento do que faz sentido para a operação. Basta responder este e-mail com o melhor dia e horário, e enviamos o link.
 

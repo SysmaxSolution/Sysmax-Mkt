@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
 
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
           <div style={{ display: "flex", alignItems: "center", alignSelf: "flex-start", background: INK, color: BRAND_GREEN_D, fontSize: 34, fontWeight: 800, borderRadius: 16, padding: "18px 30px" }}>
-            Starter R$ 149,90/mês · de R$ 189
+            Starter R$ 189/mês
           </div>
           <div style={{ display: "flex", fontSize: 30, opacity: 0.9 }}>Teste grátis 30 dias · sem cartão · migração assistida</div>
         </div>

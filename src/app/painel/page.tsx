@@ -149,6 +149,10 @@ export default function PainelPage() {
   const [sending, setSending] = useState(false);
   const [sentTo, setSentTo] = useState<Record<string, string>>({});
   const [registrando, setRegistrando] = useState<string | null>(null);
+  // Ordem do Diretor em 16/10: nada de excluir, “apenas filtre pra ela
+  // (flexibilize visualização SEMPRE)”. O que sumiu do cartão continua no
+  // banco e volta inteiro com este botão — sem deploy, sem pedir nada a ninguém.
+  const [verTudo, setVerTudo] = useState(false);
   const [agendaAberta, setAgendaAberta] = useState<string | null>(null);
   const [notaAberta, setNotaAberta] = useState<string | null>(null);
   const [salvandoNota, setSalvandoNota] = useState<string | null>(null);
@@ -181,6 +185,17 @@ export default function PainelPage() {
   useEffect(() => { if (token) { load(token); loadQuota(token); } }, [token, load, loadQuota]);
 
   function entrar() { localStorage.setItem("sysmax_viewer_token", token); load(token); }
+
+  useEffect(() => {
+    try { setVerTudo(localStorage.getItem("sysmax_ver_tudo") === "1"); } catch { /* sem storage */ }
+  }, []);
+  function alternarVerTudo() {
+    setVerTudo((v) => {
+      const novo = !v;
+      try { localStorage.setItem("sysmax_ver_tudo", novo ? "1" : "0"); } catch { /* sem storage */ }
+      return novo;
+    });
+  }
 
   async function copy(id: string, text: string) {
     try { await navigator.clipboard.writeText(text); } catch { /* ignore */ }
@@ -438,6 +453,10 @@ export default function PainelPage() {
 
         <div className="toolbar">
           <input className="search" type="search" placeholder="Buscar por clínica, cidade, país, e-mail ou telefone…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar" />
+          <button className={`allbtn${verTudo ? " active" : ""}`} onClick={alternarVerTudo}
+            title="Mostra tudo que o cartão guarda: site, Instagram, e-mail do Brasil e telefone sem WhatsApp. Nada foi apagado.">
+            {verTudo ? "Modo enxuto" : "Ver tudo"}
+          </button>
           {quota && (
             <span className={`quota${quota.remaining === 0 ? " zero" : ""}`} title="Limite diario que protege nosso dominio de cair em spam">
               E-mails hoje: {quota.sent}/{quota.cap}
@@ -489,7 +508,7 @@ export default function PainelPage() {
                   </div>
                 )}
                 <div className="chips">
-                  {waPhone && r.waValido === true && (
+                  {waPhone && (r.waValido === true || verTudo) && (
                     <button className={`chip chip-wa${copied === `fone-${r.leadId}` ? " done" : ""}`}
                       onClick={() => copy(`fone-${r.leadId}`, phoneDisplay(r.phone) ?? "")}>
                       {copied === `fone-${r.leadId}` ? "Número copiado ✓" : phoneDisplay(r.phone)}
@@ -498,11 +517,17 @@ export default function PainelPage() {
                   {waPhone && r.waValido === false && <span className="chip chip-off">sem WhatsApp</span>}
                   {waPhone && r.waValido === null && <span className="chip chip-off">WhatsApp não verificado</span>}
                   {!waPhone && <span className="chip chip-off">sem telefone</span>}
-                  {estrangeira && r.email && (
+                  {(estrangeira || verTudo) && r.email && (
                     <button className={`chip chip-em${copied === `mail-${r.leadId}` ? " done" : ""}`}
                       onClick={() => copy(`mail-${r.leadId}`, r.email ?? "")}>
                       {copied === `mail-${r.leadId}` ? "E-mail copiado ✓" : r.email}
                     </button>
+                  )}
+                  {verTudo && r.instagram && (
+                    <a className="chip chip-ig" href={`https://instagram.com/${r.instagram}`} target="_blank" rel="noopener noreferrer">@{r.instagram}</a>
+                  )}
+                  {verTudo && r.website && (
+                    <a className="chip chip-web" href={r.website} target="_blank" rel="noopener noreferrer">site</a>
                   )}
                 </div>
                 {r.recommended === "whatsapp_manual" && (
@@ -628,7 +653,7 @@ export default function PainelPage() {
                     <div className="msg-head">
                       <span className={`msg-ch ch-${m.channel}`}>{m.channelLabel}{j === 0 ? " · recomendado" : ""}</span>
                       <button className={`copy${copied === m.id ? " done" : ""}`} onClick={() => copy(m.id, (m.subject ? "Assunto: " + m.subject + "\n\n" : "") + m.body)}>{copied === m.id ? "Copiado ✓" : "Copiar"}</button>
-                      {m.channel === "email" && r.email && estrangeira && (
+                      {m.channel === "email" && r.email && (estrangeira || verTudo) && (
                         <button className="mailbtn" onClick={() => openCompose(r.leadId, m.subject ?? "", m.body)}>
                           {composeFor === r.leadId ? "Editando..." : "Escrever e enviar"}
                         </button>
@@ -638,7 +663,7 @@ export default function PainelPage() {
                     <pre className="body">{m.body}</pre>
                   </div>
                 ))}
-                {!r.messages.length && r.email && estrangeira && composeFor !== r.leadId && (
+                {!r.messages.length && r.email && (estrangeira || verTudo) && composeFor !== r.leadId && (
                   <button className="mailbtn nodraft" onClick={() => openCompose(r.leadId, "", "")}>
                     Escrever e enviar e-mail
                   </button>
