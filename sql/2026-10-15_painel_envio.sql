@@ -26,3 +26,21 @@ CREATE TABLE IF NOT EXISTS team_notes (
 );
 CREATE INDEX IF NOT EXISTS team_notes_created_idx ON team_notes(created_at DESC);
 COMMENT ON TABLE team_notes IS 'Recados da equipe comercial ao Diretor, enviados pela aba "Enviar material" do painel.';
+
+-- 4) Metricas que o painel nao consegue medir sozinho (Facebook, Instagram):
+-- quantas publicacoes a equipe fez e qual alcance deu. Entram no relatorio
+-- mensal ao lado dos envios, para comparar canais na hora de decidir onde
+-- investir. Um registro por canal/dia.
+CREATE TABLE IF NOT EXISTS social_metrics (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  canal        text NOT NULL CHECK (canal IN ('facebook_pagina','facebook_grupos','instagram','outro')),
+  dia          date NOT NULL,
+  publicacoes  integer NOT NULL DEFAULT 0 CHECK (publicacoes >= 0),
+  alcance      integer CHECK (alcance IS NULL OR alcance >= 0),
+  obs          text,
+  autor        text NOT NULL,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (canal, dia)
+);
+CREATE INDEX IF NOT EXISTS social_metrics_dia_idx ON social_metrics(dia DESC);
+COMMENT ON TABLE social_metrics IS 'Publicacoes e alcance de redes sociais, lancados a mao pela equipe no painel.';
