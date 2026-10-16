@@ -13,14 +13,19 @@ import { sendText } from "@/lib/evolution";
 // onde cada coisa mora, ela cola num lugar só e diz o que é; o destino é
 // responsabilidade daqui.
 //
-//   post   → content_calendar do dia, e aparece em "Posts do dia"
-//   recado → WhatsApp do Diretor, e fica registrado em team_notes
+//   post    → content_calendar do dia, e aparece em "Posts do dia"
+//   recado  → WhatsApp do Diretor, e fica registrado em team_notes
+//   numeros → social_metrics, e entra no relatório do mês
+//
+// O terceiro tipo existe porque eu tinha quebrado o combinado: criei uma aba
+// separada só para lançar números de rede, quando o acordo era ela colar tudo
+// AQUI e o destino ser problema meu.
 // ===========================================================================
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-const TIPOS = ["post", "recado"] as const;
+const TIPOS = ["post", "recado", "numeros"] as const;
 type Tipo = (typeof TIPOS)[number];
 
 function hojeISO(): string {
@@ -39,6 +44,37 @@ export async function POST(req: NextRequest) {
   const autor = cleanText(b?.autor, 60) || "equipe";
 
   if (!TIPOS.includes(tipo)) return NextResponse.json({ ok: false, error: "Escolha o que é esse material." }, { status: 400 });
+
+  if (tipo === "numeros") {
+    const canal = cleanText(b?.canal, 20) || "facebook_pagina";
+    const dia = cleanText(b?.dia, 10);
+    const publicacoes = Number(b?.publicacoes ?? 0);
+    const alcanceBruto = b?.alcance;
+    const alcance = alcanceBruto === "" || alcanceBruto === null || alcanceBruto === undefined ? null : Number(alcanceBruto);
+    if (!/^(facebook_pagina|facebook_grupos|instagram|outro)$/.test(canal)) {
+      return NextResponse.json({ ok: false, error: "Escolha o canal." }, { status: 400 });
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dia)) return NextResponse.json({ ok: false, error: "Informe o dia." }, { status: 400 });
+    if (!Number.isFinite(publicacoes) || publicacoes < 0 || publicacoes > 10_000) {
+      return NextResponse.json({ ok: false, error: "Número de publicações inválido." }, { status: 400 });
+    }
+    if (alcance !== null && (!Number.isFinite(alcance) || alcance < 0)) {
+      return NextResponse.json({ ok: false, error: "Alcance inválido." }, { status: 400 });
+    }
+    const { error } = await salesDb.from("social_metrics").upsert(
+      {
+        canal, dia,
+        publicacoes: Math.trunc(publicacoes),
+        alcance: alcance === null ? null : Math.trunc(alcance),
+        obs: obs ?? (texto || null),
+        autor,
+      },
+      { onConflict: "canal,dia" },
+    );
+    if (error) return NextResponse.json({ ok: false, error: "Não consegui salvar os números." }, { status: 500 });
+    return NextResponse.json({ ok: true, destino: "Relatório do mês" });
+  }
+
   if (!texto) return NextResponse.json({ ok: false, error: "Cole o material no campo." }, { status: 400 });
   if (texto.length > 40_000) return NextResponse.json({ ok: false, error: "Material grande demais. Divida em partes." }, { status: 413 });
 
