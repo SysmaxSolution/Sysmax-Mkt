@@ -24,6 +24,7 @@ type Row = {
   retornoEm?: string | null;
   reuniaoEm?: string | null;
   nota?: string | null;
+  waValido?: boolean | null;
 };
 
 // Canais que a equipe registra na mao depois de falar com a clinica.
@@ -435,26 +436,26 @@ export default function PainelPage() {
                     </span>
                   </div>
                 </header>
+                {/* Regra dela (16/10): telefone só vale com WhatsApp validado --
+                    "não existe ligação para telefone fixo, muito menos para
+                    celular sem whatsapp validado". Site, @ e e-mail do Brasil
+                    saíram da tela: não são o caminho que ela usa. */}
                 <div className="chips">
-                  {/* Sem atalho para o WhatsApp Web: ela não usa o zap por dentro
-                      do painel e pediu a tela mais limpa. O número fica à vista
-                      e um clique copia. */}
-                  {waPhone && (
+                  {waPhone && r.waValido === true && (
                     <button className={`chip chip-wa${copied === `fone-${r.leadId}` ? " done" : ""}`}
                       onClick={() => copy(`fone-${r.leadId}`, phoneDisplay(r.phone) ?? "")}>
                       {copied === `fone-${r.leadId}` ? "Número copiado ✓" : phoneDisplay(r.phone)}
                     </button>
                   )}
-                  {r.instagram && <a className="chip chip-ig" href={`https://instagram.com/${r.instagram}`} target="_blank" rel="noopener noreferrer">@{r.instagram}</a>}
-                  {/* O envio de e-mail acontece aqui dentro ("Escrever e enviar"),
-                      entao o mailto so tirava ela do painel. Clique copia. */}
-                  {r.email && (
+                  {waPhone && r.waValido === false && <span className="chip chip-off">sem WhatsApp</span>}
+                  {waPhone && r.waValido === null && <span className="chip chip-off">WhatsApp não verificado</span>}
+                  {!waPhone && <span className="chip chip-off">sem telefone</span>}
+                  {estrangeira && r.email && (
                     <button className={`chip chip-em${copied === `mail-${r.leadId}` ? " done" : ""}`}
                       onClick={() => copy(`mail-${r.leadId}`, r.email ?? "")}>
                       {copied === `mail-${r.leadId}` ? "E-mail copiado ✓" : r.email}
                     </button>
                   )}
-                  {r.website && <a className="chip chip-web" href={r.website} target="_blank" rel="noopener noreferrer">site</a>}
                 </div>
                 {r.recommended === "whatsapp_manual" && (
                   <p className="note">O e-mail cadastrado é pessoal/inválido — envie por <b>WhatsApp</b>. O texto abaixo (rascunho de e-mail) serve de base; encurte para o tom de zap.</p>
@@ -1111,6 +1112,7 @@ const CSS = `
   .chip{font-size:12.5px;text-decoration:none;color:var(--ink);background:var(--surface-2);border:1px solid var(--border);padding:5px 10px;border-radius:8px;font-weight:600;white-space:nowrap}
   .chip:hover{border-color:var(--accent)}
   .chip-wa{color:var(--wa)} .chip-ig{color:var(--ig)} .chip-em{color:var(--email)} .chip-web{color:var(--muted);font-weight:500}
+  .chip-off{color:var(--muted);font-weight:500;font-style:italic;background:transparent;border-style:dashed}
   button.chip{cursor:pointer;font-family:inherit}
   button.chip.done{border-color:var(--wa);background:var(--wa-bg)}
   .note{margin:0;font-size:12.5px;background:var(--call-bg);color:var(--call);border-radius:8px;padding:8px 10px}

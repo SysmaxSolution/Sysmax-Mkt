@@ -21,7 +21,7 @@ type Lead = {
   id: string; name: string | null; company_name: string | null; city: string | null; uf: string | null; country?: string | null; opted_out?: boolean | null;
   phone: string | null; email: string | null; instagram_handle: string | null; website: string | null;
   enrichment_status: string | null; stage: string | null;
-  retorno_em?: string | null; reuniao_em?: string | null; notes?: string | null;
+  retorno_em?: string | null; reuniao_em?: string | null; notes?: string | null; wa_valido?: boolean | null;
 };
 type Ob = { id: string; lead_id: string; channel: string; subject: string | null; body: string; status: string };
 
@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
   // source manual = clínica cadastrada à mão pela equipe no painel; sem isso
   // os contatos que ela mesma encontra não apareceriam na fila.
   const [{ data: leads, error: le }, { data: outbox, error: oe }] = await Promise.all([
-    salesDb.from("leads").select("id,name,company_name,city,uf,country,phone,email,instagram_handle,website,enrichment_status,stage,opted_out,retorno_em,reuniao_em,notes").in("source", ["places", "manual"]),
+    salesDb.from("leads").select("id,name,company_name,city,uf,country,phone,email,instagram_handle,website,enrichment_status,stage,opted_out,retorno_em,reuniao_em,notes,wa_valido").in("source", ["places", "manual"]),
     salesDb.from("outbox").select("id,lead_id,channel,subject,body,status").in("status", ["draft", "approved"]).order("created_at", { ascending: false }).limit(2000),
   ]);
   if (le || oe) return NextResponse.json({ ok: false, error: (le ?? oe)?.message }, { status: 500 });
@@ -105,6 +105,7 @@ export async function GET(req: NextRequest) {
       retornoEm: l.retorno_em ?? null,
       reuniaoEm: l.reuniao_em ?? null,
       nota: l.notes ?? null,
+      waValido: l.wa_valido ?? null,
     });
   }
 
@@ -140,6 +141,7 @@ export async function GET(req: NextRequest) {
       retornoEm: raw.retorno_em ?? null,
       reuniaoEm: raw.reuniao_em ?? null,
       nota: raw.notes ?? null,
+      waValido: raw.wa_valido ?? null,
     });
   }
 
