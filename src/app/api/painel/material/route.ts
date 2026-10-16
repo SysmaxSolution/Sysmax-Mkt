@@ -61,6 +61,7 @@ export async function POST(req: NextRequest) {
       obs: obs ?? (texto || null),
       autor,
       fotos: b?.fotos,
+      investimento: b?.investimento,
     });
     if (!r.ok) return NextResponse.json({ ok: false, error: r.erro }, { status: r.status });
     return NextResponse.json({

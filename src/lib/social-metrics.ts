@@ -27,6 +27,7 @@ export type EntradaNumeros = {
   obs: string | null;
   autor: string;
   fotos: unknown;
+  investimento: unknown;
 };
 
 export type SaidaNumeros = { ok: true; conferir: boolean; fotos: number } | { ok: false; erro: string; status: number };
@@ -47,17 +48,20 @@ export async function salvarNumeros(e: EntradaNumeros): Promise<SaidaNumeros> {
   if (pub === "invalido") return { ok: false, erro: "Número de publicações inválido.", status: 400 };
   const alc = numeroOuNulo(e.alcance);
   if (alc === "invalido") return { ok: false, erro: "Alcance inválido.", status: 400 };
+  // Dinheiro em centavos: "27", "27,00" e "27.00" valem R$ 27,00.
+  const inv = numeroOuNulo(
+    typeof e.investimento === "string" && e.investimento.trim()
+      ? Math.round(parseFloat(e.investimento.replace(/\./g, "").replace(",", ".")) * 100)
+      : e.investimento,
+  );
+  if (inv === "invalido") return { ok: false, erro: "Valor investido inválido.", status: 400 };
 
   const { caminhos: novasFotos, erro: erroFoto } = await salvarFotos(e.fotos);
   if (erroFoto) return { ok: false, erro: erroFoto, status: 400 };
 
-  if (pub === null && !novasFotos.length) {
-    return { ok: false, erro: "Informe quantas publicações você fez, ou anexe o print do relatório.", status: 400 };
-  }
-
   const { data: atual } = await salesDb
     .from("social_metrics")
-    .select("publicacoes,alcance,obs,fotos")
+    .select("publicacoes,alcance,obs,fotos,investimento_centavos")
     .eq("canal", e.canal)
     .eq("dia", e.dia)
     .maybeSingle();
@@ -66,6 +70,14 @@ export async function salvarNumeros(e: EntradaNumeros): Promise<SaidaNumeros> {
   const fotos = [...anteriores, ...novasFotos].slice(0, MAX_FOTOS);
   const publicacoes = pub ?? ((atual?.publicacoes as number | null) ?? null);
   const alcance = alc ?? ((atual?.alcance as number | null) ?? null);
+  const investimento = inv ?? ((atual?.investimento_centavos as number | null) ?? null);
+
+  // Só recusa quando não sobrou NADA para gravar. A checagem vem depois de ler
+  // a linha atual de propósito: voltar a um dia já preenchido só para somar o
+  // valor investido era recusado como "informe as publicações".
+  if (publicacoes === null && !fotos.length && investimento === null && alcance === null) {
+    return { ok: false, erro: "Informe quantas publicações você fez, ou anexe o print do relatório.", status: 400 };
+  }
 
   const { error } = await salesDb.from("social_metrics").upsert(
     {
@@ -76,11 +88,12 @@ export async function salvarNumeros(e: EntradaNumeros): Promise<SaidaNumeros> {
       obs: e.obs ?? ((atual?.obs as string | null) ?? null),
       autor: e.autor,
       fotos: fotos.length ? fotos : null,
-      conferir: publicacoes === null,
+      investimento_centavos: investimento,
+      conferir: publicacoes === null && fotos.length > 0,
     },
     { onConflict: "canal,dia" },
   );
   if (error) return { ok: false, erro: "Não consegui salvar os números.", status: 500 };
 
-  return { ok: true, conferir: publicacoes === null, fotos: fotos.length };
+  return { ok: true, conferir: publicacoes === null && fotos.length > 0, fotos: fotos.length };
 }

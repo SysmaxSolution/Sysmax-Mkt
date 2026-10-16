@@ -30,7 +30,7 @@ function hojeISO(): string {
 
 export default function EnviarMaterial({ token }: { token: string }) {
   const [tipo, setTipo] = useState<"post" | "recado" | "numeros">("post");
-  const [rede, setRede] = useState({ canal: "facebook_pagina", dia: hojeISO(), publicacoes: "", alcance: "" });
+  const [rede, setRede] = useState({ canal: "facebook_pagina", dia: hojeISO(), publicacoes: "", alcance: "", investimento: "" });
   const [titulo, setTitulo] = useState("");
   const [texto, setTexto] = useState("");
   const [obs, setObs] = useState("");
@@ -60,7 +60,7 @@ export default function EnviarMaterial({ token }: { token: string }) {
       if (!d.ok) { setMsg({ kind: "err", text: d.error ?? "Não consegui enviar." }); return; }
       setMsg({ kind: "ok", text: `Guardado. Destino: ${d.destino}.` });
       setTitulo(""); setTexto(""); setObs(""); setFotos([]);
-      setRede((p) => ({ ...p, publicacoes: "", alcance: "" }));
+      setRede((p) => ({ ...p, publicacoes: "", alcance: "", investimento: "" }));
     } catch {
       setMsg({ kind: "err", text: "Falha de rede ao enviar. Se a imagem for muito grande, tente uma por vez." });
     } finally { setBusy(false); }
@@ -114,6 +114,11 @@ export default function EnviarMaterial({ token }: { token: string }) {
             <label className="clabel" htmlFor="mat-alc">Visualizações (se souber)</label>
             <input id="mat-alc" className="cinput" inputMode="numeric" value={rede.alcance} placeholder="200"
               onChange={(e) => setRede((p) => ({ ...p, alcance: e.target.value.replace(/\D/g, "") }))} />
+          </div>
+          <div className="nvf">
+            <label className="clabel" htmlFor="mat-inv">Investiu em impulsionamento? (R$)</label>
+            <input id="mat-inv" className="cinput" inputMode="decimal" value={rede.investimento} placeholder="27,00"
+              onChange={(e) => setRede((p) => ({ ...p, investimento: e.target.value.replace(/[^\d.,]/g, "") }))} />
           </div>
           <div className="nvf nvf-wide">
             <label className="clabel" htmlFor="mat-obs2">Observação (opcional)</label>

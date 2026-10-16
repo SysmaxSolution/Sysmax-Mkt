@@ -25,7 +25,9 @@ type Dados = {
   porPessoa: { quem: string; total: number }[];
   clinicasNovas: number;
   porPais: { pais: string; total: number }[];
-  redes: { canal: string; publicacoes: number; alcance: number }[];
+  redes: { canal: string; publicacoes: number; alcance: number; investido: number }[];
+  investido: number;
+  custoPorVisualizacao: number | null;
   prints: Print[];
   aConferir: number;
   responderam: number;
@@ -52,7 +54,7 @@ export default function RelatorioMensal({ token }: { token: string }) {
   const [mes, setMes] = useState(mesAtual());
   const [d, setD] = useState<Dados | null>(null);
   const [erro, setErro] = useState("");
-  const [f, setF] = useState({ canal: "facebook_pagina", dia: hojeISO(), publicacoes: "", alcance: "", obs: "" });
+  const [f, setF] = useState({ canal: "facebook_pagina", dia: hojeISO(), publicacoes: "", alcance: "", obs: "", investimento: "" });
   const [fotos, setFotos] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -89,7 +91,7 @@ export default function RelatorioMensal({ token }: { token: string }) {
           ? "Print guardado. Os números saem dele — não precisa digitar."
           : "Números registrados. Já entraram no relatório.",
       });
-      setF((p) => ({ ...p, publicacoes: "", alcance: "", obs: "" }));
+      setF((p) => ({ ...p, publicacoes: "", alcance: "", obs: "", investimento: "" }));
       setFotos([]);
       carregar(mes);
     } catch { setMsg({ kind: "err", text: "Falha de rede. Se o print for muito grande, tente um por vez." }); }
@@ -119,6 +121,18 @@ export default function RelatorioMensal({ token }: { token: string }) {
             ))}
             <div className="diacard"><b>{d.clinicasNovas}</b><span>Clínicas novas</span></div>
             <div className="diacard"><b>{d.responderam}</b><span>Responderam</span></div>
+            {d.investido > 0 && (
+              <div className="diacard">
+                <b>R$ {d.investido.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</b>
+                <span>Investido em impulsionamento</span>
+              </div>
+            )}
+            {d.custoPorVisualizacao !== null && (
+              <div className="diacard">
+                <b>R$ {d.custoPorVisualizacao.toLocaleString("pt-BR", { minimumFractionDigits: 3 })}</b>
+                <span>por visualização<br />(pago + orgânico)</span>
+              </div>
+            )}
             {d.taxaResposta !== null && (
               <div className="diacard"><b>{d.taxaResposta}%</b><span>Taxa de resposta</span></div>
             )}
@@ -206,6 +220,11 @@ export default function RelatorioMensal({ token }: { token: string }) {
           <label className="clabel" htmlFor="rm-alc">Visualizações / alcance (se souber)</label>
           <input id="rm-alc" className="cinput" inputMode="numeric" value={f.alcance}
             onChange={(e) => setF((p) => ({ ...p, alcance: e.target.value.replace(/\D/g, "") }))} placeholder="200" />
+        </div>
+        <div className="nvf">
+          <label className="clabel" htmlFor="rm-inv">Investiu em impulsionamento? (R$)</label>
+          <input id="rm-inv" className="cinput" inputMode="decimal" value={f.investimento} placeholder="27,00"
+            onChange={(e) => setF((p) => ({ ...p, investimento: e.target.value.replace(/[^\d.,]/g, "") }))} />
         </div>
         <div className="nvf nvf-wide">
           <label className="clabel" htmlFor="rm-obs">Observação (opcional)</label>

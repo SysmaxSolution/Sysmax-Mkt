@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
   const [enviosRes, novasRes, socialRes, funilRes] = await Promise.all([
     salesDb.from("outbox").select("channel,approved_by").eq("status", "sent").gte("sent_at", j.de).lt("sent_at", j.ate),
     salesDb.from("leads").select("id,country").eq("source", "manual").gte("discovered_at", j.de).lt("discovered_at", j.ate),
-    salesDb.from("social_metrics").select("canal,publicacoes,alcance,dia,fotos,conferir").gte("dia", j.de.slice(0, 10)).lt("dia", j.ate.slice(0, 10)).order("dia", { ascending: false }),
+    salesDb.from("social_metrics").select("canal,publicacoes,alcance,dia,fotos,conferir,investimento_centavos").gte("dia", j.de.slice(0, 10)).lt("dia", j.ate.slice(0, 10)).order("dia", { ascending: false }),
     salesDb.from("leads").select("stage").gte("qualified_at", j.de).lt("qualified_at", j.ate),
   ]);
 
@@ -72,14 +72,21 @@ export async function GET(req: NextRequest) {
   const porPais: Record<string, number> = {};
   for (const n of novas) porPais[n.country ?? "?"] = (porPais[n.country ?? "?"] ?? 0) + 1;
 
-  type Social = { canal: string; publicacoes: number | null; alcance: number | null; dia: string; fotos: string[] | null; conferir: boolean | null };
+  type Social = { canal: string; publicacoes: number | null; alcance: number | null; dia: string; fotos: string[] | null; conferir: boolean | null; investimento_centavos: number | null };
   const social = (socialRes.data ?? []) as Social[];
-  const redes: Record<string, { publicacoes: number; alcance: number }> = {};
+  const redes: Record<string, { publicacoes: number; alcance: number; investido: number }> = {};
   for (const s of social) {
-    const r = (redes[s.canal] ??= { publicacoes: 0, alcance: 0 });
+    const r = (redes[s.canal] ??= { publicacoes: 0, alcance: 0, investido: 0 });
     r.publicacoes += s.publicacoes ?? 0;
     r.alcance += s.alcance ?? 0;
+    r.investido += s.investimento_centavos ?? 0;
   }
+
+  // Trafego pago: so faz sentido olhar o gasto ao lado do que ele trouxe.
+  // A pergunta da captacao em 16/10 foi exatamente essa — "vale a pena
+  // investir?" — e sem as duas pontas juntas a resposta e chute.
+  const investidoCentavos = social.reduce((t, s) => t + (s.investimento_centavos ?? 0), 0);
+  const alcanceTotal = social.reduce((t, s) => t + (s.alcance ?? 0), 0);
 
   // Prints anexados: ficam à vista para conferir o número contra a fonte, e os
   // dias ainda sem número aparecem marcados em vez de somar zero calado.
@@ -109,7 +116,16 @@ export async function GET(req: NextRequest) {
       canal: CANAL_LABEL[canal] ?? canal,
       publicacoes: v.publicacoes,
       alcance: v.alcance,
+      investido: v.investido / 100,
     })),
+    investido: investidoCentavos / 100,
+    // Custo por visualizacao do mes inteiro: aproximacao honesta, porque parte
+    // do alcance e organica. Serve para comparar meses, nao para auditar.
+    custoPorVisualizacao: investidoCentavos > 0 && alcanceTotal > 0
+      // 3 casas: a R$ 27 por 2.171 visualizacoes o custo e R$ 0,012 — arredondar
+      // para centavo inteiro mostraria R$ 0,01 e perderia a comparacao.
+      ? Math.round((investidoCentavos / alcanceTotal) * 10) / 1000
+      : null,
     prints,
     aConferir: prints.filter((p) => p.conferir).length,
     responderam,
@@ -135,6 +151,7 @@ export async function POST(req: NextRequest) {
     obs: cleanText(b?.obs, 500) || null,
     autor: cleanText(b?.autor, 60) || "equipe",
     fotos: b?.fotos,
+    investimento: b?.investimento,
   });
   if (!r.ok) return NextResponse.json({ ok: false, error: r.erro }, { status: r.status });
 
