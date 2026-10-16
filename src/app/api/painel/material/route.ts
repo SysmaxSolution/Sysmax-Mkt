@@ -16,6 +16,7 @@ import { salvarNumeros } from "@/lib/social-metrics";
 // responsabilidade daqui.
 //
 //   post    → content_calendar do dia, e aparece em "Posts do dia"
+//   video   → roteiro em content_calendar; o renderizador local monta o MP4
 //   recado  → WhatsApp do Diretor, e fica registrado em team_notes
 //   numeros → social_metrics, e entra no relatório do mês
 //
@@ -32,7 +33,7 @@ import { salvarNumeros } from "@/lib/social-metrics";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-const TIPOS = ["post", "recado", "numeros"] as const;
+const TIPOS = ["post", "video", "recado", "numeros"] as const;
 type Tipo = (typeof TIPOS)[number];
 
 function hojeISO(): string {
@@ -108,6 +109,36 @@ export async function POST(req: NextRequest) {
       destino: fotos.length
         ? `Posts do dia, com ${fotos.length === 1 ? "a sua foto" : `as suas ${fotos.length} fotos`}`
         : "Posts do dia",
+    });
+  }
+
+  if (tipo === "video") {
+    // Roteiro de vídeo: cada linha do texto vira uma cena. O MP4 é montado
+    // depois por scripts/render-daily-videos.mjs (Playwright + FFmpeg, roda na
+    // máquina do fundador) e aparece em "Posts do dia" para baixar.
+    const linhas = texto.split("\n").map((l) => l.trim()).filter(Boolean);
+    const { error } = await salesDb.from("content_calendar").insert({
+      pillar: "video",
+      format: "reel",
+      platform: "facebook",
+      brief: JSON.stringify({
+        headline: titulo ?? "Vídeo da equipe",
+        hook: titulo ?? linhas[0] ?? "SYSVETMAX",
+        scenes: linhas.slice(titulo ? 0 : 1, (titulo ? 0 : 1) + 4),
+        cta: linhas.length > 1 ? linhas[linhas.length - 1] : null,
+        origem: `enviado por ${autor} pelo painel`,
+        ...(obs ? { observacao: obs } : {}),
+        ...(fotos.length ? { fotos } : {}),
+      }),
+      scheduled_for: hojeISO(),
+      status: "approved",
+    });
+    if (error) return NextResponse.json({ ok: false, error: "Não consegui guardar o roteiro." }, { status: 500 });
+    return NextResponse.json({
+      ok: true,
+      destino: fotos.length
+        ? `fila de vídeo, com ${fotos.length === 1 ? "a sua foto de fundo" : `as suas ${fotos.length} fotos de fundo`}`
+        : "fila de vídeo",
     });
   }
 

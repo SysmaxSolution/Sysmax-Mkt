@@ -47,11 +47,15 @@ function ffmpeg(args) {
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 // Slide vertical 1080x1920, estilo da marca.
-function slideHtml({ kicker, title, big, ribbon, footer }) {
+function slideHtml({ kicker, title, big, ribbon, footer, foto }) {
+  // Com foto, o verde da marca vira um veu por cima: a imagem aparece e o
+  // texto continua legivel. Sem foto, o degrade de sempre.
+  const fundo = foto
+    ? `background:linear-gradient(170deg,rgba(10,90,74,.82) 0%,rgba(8,62,52,.9) 100%),url('${foto}') center/cover no-repeat`
+    : "background:linear-gradient(155deg,#0E7C66 0%,#0A5A4A 60%,#083E34 100%)";
   return `<!doctype html><html><head><meta charset="utf-8"><style>
   *{margin:0;box-sizing:border-box;font-family:'Segoe UI',system-ui,sans-serif}
-  body{width:1080px;height:1920px;overflow:hidden;color:#F3FBF7;
-    background:linear-gradient(155deg,#0E7C66 0%,#0A5A4A 60%,#083E34 100%)}
+  body{width:1080px;height:1920px;overflow:hidden;color:#F3FBF7;${fundo}}
   .wrap{width:100%;height:100%;display:flex;flex-direction:column;justify-content:${big ? "center" : "flex-start"};padding:${big ? "130px" : "230px"} 96px 140px;gap:36px}
   .top{display:flex;justify-content:space-between;align-items:center;position:absolute;top:96px;left:96px;right:96px}
   .brand{font-size:44px;font-weight:800;letter-spacing:3px}
@@ -72,20 +76,46 @@ function slideHtml({ kicker, title, big, ribbon, footer }) {
 }
 
 // Monta a lista de slides a partir do roteiro.
-function buildSlides(v) {
+function buildSlides(v, fotos = []) {
   const slides = [];
-  slides.push({ kicker: "SYSVETMAX", title: v.hook || v.headline || "O MV fala. A IA escreve.", big: true });
+  // As fotos da equipe entram como fundo, em ordem; faltando foto, o slide
+  // volta ao degrade da marca.
+  const foto = (i) => fotos[i] ?? null;
+  slides.push({ kicker: "SYSVETMAX", title: v.hook || v.headline || "O MV fala. A IA escreve.", big: true, foto: foto(0) });
   for (const [i, sc] of (v.scenes ?? []).slice(0, 4).entries()) {
-    slides.push({ kicker: `Cena ${i + 1}`, title: sc });
+    slides.push({ kicker: `Cena ${i + 1}`, title: sc, foto: foto(i + 1) });
   }
-  slides.push({ kicker: v.cta ? "" : "Teste grátis", title: v.cta || "Comece hoje, sem cartão.", ribbon: "Starter R$ 149,90/mês", footer: "Teste grátis 30 dias · migração assistida" });
+  // SEM preco fixo aqui. O ribbon trazia "Starter R$ 149,90 (de R$ 189)", que
+  // e promocao antiga: video publicado anuncia preco que a tabela nao tem.
+  // Preco so entra se vier escrito no roteiro.
+  slides.push({ kicker: "", title: v.cta || "Fale com a gente.", footer: "sysmaxsolutions.com", foto: foto(fotos.length - 1) });
   return slides;
+}
+
+// Traz as fotos do bucket "material" para o disco: a pagina do Playwright le
+// por file://, sem precisar de URL assinada.
+async function baixarFotos(caminhos, workDir) {
+  const locais = [];
+  for (const [i, caminho] of (caminhos ?? []).slice(0, 6).entries()) {
+    try {
+      const { data, error } = await db.storage.from("material").download(caminho);
+      if (error || !data) continue;
+      const ext = caminho.split(".").pop() ?? "jpg";
+      const destino = join(workDir, `foto-${i}.${ext}`);
+      await writeFile(destino, Buffer.from(await data.arrayBuffer()));
+      locais.push(`file:///${destino.replace(/\\/g, "/")}`);
+    } catch {
+      // Foto que nao baixa nao derruba o video: o slide volta ao degrade.
+    }
+  }
+  return locais;
 }
 
 async function renderVideo(browser, item, workDir) {
   let v = {};
   try { v = JSON.parse(item.brief); } catch {}
-  const slides = buildSlides(v);
+  const fotos = await baixarFotos(v.fotos ?? [], workDir);
+  const slides = buildSlides(v, fotos);
   const page = await browser.newPage({ viewport: { width: 1080, height: 1920 }, deviceScaleFactor: 1 });
 
   // 1) screenshot de cada slide

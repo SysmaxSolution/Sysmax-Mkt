@@ -12,6 +12,7 @@ import FotoPicker from "./FotoPicker";
 
 const TIPOS = [
   { id: "post", nome: "Post para publicar", ajuda: "Vai para a aba Posts do dia, pronto para você copiar e publicar." },
+  { id: "video", nome: "Roteiro de vídeo", ajuda: "Uma frase por linha. Nós montamos o vídeo vertical com as suas fotos de fundo e ele aparece em Posts do dia." },
   { id: "recado", nome: "Recado para o James", ajuda: "Chega no WhatsApp dele na hora e fica registrado aqui." },
   { id: "numeros", nome: "Relatório das redes", ajuda: "Publicações e visualizações. Pode anexar só o print do relatório do Facebook — os números entram no Relatório do mês." },
 ] as const;
@@ -29,7 +30,7 @@ function hojeISO(): string {
 }
 
 export default function EnviarMaterial({ token }: { token: string }) {
-  const [tipo, setTipo] = useState<"post" | "recado" | "numeros">("post");
+  const [tipo, setTipo] = useState<"post" | "video" | "recado" | "numeros">("post");
   const [rede, setRede] = useState({ canal: "facebook_pagina", dia: hojeISO(), publicacoes: "", alcance: "", investimento: "" });
   const [titulo, setTitulo] = useState("");
   const [texto, setTexto] = useState("");
@@ -137,19 +138,25 @@ export default function EnviarMaterial({ token }: { token: string }) {
       <label className="clabel" htmlFor="mat-tit">Título (opcional)</label>
       <input id="mat-tit" className="cinput" value={titulo} maxLength={160}
         onChange={(e) => setTitulo(e.target.value)}
-        placeholder={tipo === "post" ? "Prontuário por voz" : "Sobre a extensão do Facebook"} />
+        placeholder={tipo === "post" ? "Prontuário por voz" : tipo === "video" ? "O MV fala. A IA escreve." : "Sobre a extensão do Facebook"} />
 
       <label className="clabel" htmlFor="mat-txt">Material</label>
       <textarea id="mat-txt" className="ctext" rows={14} value={texto}
         onChange={(e) => setTexto(e.target.value)}
-        placeholder={tipo === "post" ? "Cole aqui o texto do post, com o link do site se houver." : "Escreva o recado."} />
+        placeholder={tipo === "post"
+          ? "Cole aqui o texto do post, com o link do site se houver."
+          : tipo === "video"
+            ? "Uma frase por linha — cada linha vira uma cena.\n\nO veterinário atende e fala.\nO prontuário se escreve sozinho.\nNo fim do dia, nada de digitação.\nFale com a gente."
+            : "Escreva o recado."} />
 
       <FotoPicker
         fotos={fotos} setFotos={setFotos} disabled={busy}
-        label="Foto (opcional)"
+        label={tipo === "video" ? "Fotos de fundo (opcional)" : "Foto (opcional)"}
         ajuda={tipo === "post"
           ? "A sua foto entra no lugar da arte automática em “Posts do dia”, pronta para baixar e publicar. Pode ser do celular: eu reduzo o tamanho aqui mesmo."
-          : "A foto vai no WhatsApp do James junto com o recado — bom para print de tela."}
+          : tipo === "video"
+            ? "Cada foto vira o fundo de uma cena, na ordem em que você colocar. Sem foto, o vídeo sai com o verde da marca."
+            : "A foto vai no WhatsApp do James junto com o recado — bom para print de tela."}
         onErro={(t) => setMsg(t ? { kind: "err", text: t } : null)}
       />
 
