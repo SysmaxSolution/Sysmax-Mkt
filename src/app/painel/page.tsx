@@ -316,18 +316,15 @@ export default function PainelPage() {
 
         <div className="grid">
           {visible.map((r, i) => {
-            const rk = REC[r.recommended]?.key ?? "call";
-            const recLabel = REC[r.recommended]?.label ?? r.recommended;
             const primary = primaryOf(r);
             const ordered = primary ? [primary, ...r.messages.filter((m) => m !== primary)] : [];
             const waPhone = r.phone ? r.phone.replace(/\D/g, "") : null;
             return (
               <article className="card" key={i}>
+                {/* Sem selo de canal recomendado nem de status no topo: ela leu a
+                    tela e disse "nao vamos usar isso". O status ja aparece
+                    colorido nos proprios botoes, logo abaixo. */}
                 <header className="card-top">
-                  <div className="badges">
-                    <div className={`rec rec-${rk}`}>{recLabel}</div>
-                    <div className={`stbadge st-${stageKey(r.stage)}`}>{STAGE_LABEL[r.stage] ?? r.stage}</div>
-                  </div>
                   <div className="titlewrap">
                     <h3>{r.clinic}</h3>
                     <span className="loc">
@@ -336,7 +333,6 @@ export default function PainelPage() {
                     </span>
                   </div>
                 </header>
-                <p className="why">{r.recommendedReason}</p>
                 <div className="chips">
                   {/* Sem atalho para o WhatsApp Web: ela não usa o zap por dentro
                       do painel e pediu a tela mais limpa. O número fica à vista
