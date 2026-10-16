@@ -14,6 +14,11 @@ type Item = {
   clinic: string; contact: string | null; city: string | null; country: string;
   email: string | null; phone: string | null; warnings: string[]; existing: boolean;
   subject?: string | null; emailBody?: string | null;
+  // Ficha do Keep da captacao: quem pedir para falar, registro, CNPJ, sistema
+  // atual e o historico dela. Mostrar isso na previa e a unica prova de que a
+  // pesquisa dela chegou inteira -- antes o cartao so exibia nome e contato.
+  uf?: string | null; nota?: string | null;
+  responsavel?: string | null; crmv?: string | null; cnpj?: string | null; sistema?: string | null;
 };
 
 export default function ImportarLista({ token, onImportou }: { token: string; onImportou: () => void }) {
@@ -102,10 +107,22 @@ export default function ImportarLista({ token, onImportou }: { token: string; on
 
       {itens && (
         <>
+          {/* Dois passos enganam: a previa parece conclusao. Ela colou a
+              carteira, viu a lista na tela e perguntou "deu certo?" -- nada
+              havia sido salvo. O aviso tem que ser impossivel de nao ver. */}
+          <p className="impfalta">
+            Ainda <b>não salvei nada</b>. Isto é só a conferência — clique em
+            <b> &quot;Importar {marcados} clínica(s)&quot;</b> no final da lista para gravar de verdade.
+          </p>
           <p className="chint">
             Entendi <b>{itens.length}</b> clínica(s). {marcados} marcada(s) para importar.
             Desmarque o que não quiser. {cortados > 0 && <b>{cortados} ficaram de fora do limite de 200 — cole o resto depois.</b>}
           </p>
+          <div className="crow">
+            <button className="csend" disabled={busy || !marcados} onClick={importar}>
+              {busy ? "Importando..." : `Importar ${marcados} clínica(s) agora`}
+            </button>
+          </div>
           <div className="dialist">
             {itens.map((i, idx) => (
               <label className={`improw${fora.has(idx) ? " off" : ""}`} key={idx}>
@@ -117,6 +134,10 @@ export default function ImportarLista({ token, onImportou }: { token: string; on
                     {i.contact ? ` · ${i.contact}` : ""}
                   </span>
                   <span className="impsub">{i.email ?? "sem e-mail"}{i.phone ? ` · ${i.phone}` : ""}</span>
+                  {i.responsavel && <span className="impok">falar com: {i.responsavel}{i.crmv ? ` · ${i.crmv}` : ""}</span>}
+                  {i.cnpj && <span className="impsub">CNPJ {i.cnpj}</span>}
+                  {i.sistema && <span className="impsub">raio-X: {i.sistema.slice(0, 90)}</span>}
+                  {i.nota && <span className="impsub">anotação: {i.nota.slice(0, 110)}</span>}
                   {i.emailBody && <span className="impok">e-mail já redigido: &quot;{(i.subject ?? "").slice(0, 60)}&quot;</span>}
                   {i.existing && <span className="impwarn">já cadastrada no painel</span>}
                   {i.warnings.map((w) => <span className="impwarn" key={w}>{w}</span>)}

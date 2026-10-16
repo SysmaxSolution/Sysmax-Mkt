@@ -50,6 +50,18 @@ async function marcarExistentes(itens: ParsedLead[] | Item[]): Promise<Set<strin
   return achados;
 }
 
+// Recibo da tentativa. Ela colou a carteira, perguntou "deu certo?" e nao
+// havia como responder sem adivinhar: nenhuma clinica nova e nenhum rastro.
+// Nunca guarda o texto colado -- so tamanho e uma amostra curta do inicio.
+// Falha de gravacao do recibo nao pode derrubar a importacao.
+async function recibo(etapa: string, dados: Record<string, unknown>): Promise<void> {
+  try {
+    await salesDb.from("import_runs").insert({ etapa, ...dados });
+  } catch {
+    /* recibo e diagnostico, nao requisito */
+  }
+}
+
 function jaExiste(set: Set<string>, email: string | null, phone: string | null): boolean {
   return (!!email && set.has(`e:${email.toLowerCase()}`)) || (!!phone && set.has(`p:${phone}`));
 }
@@ -65,13 +77,17 @@ export async function POST(req: NextRequest) {
   if (!confirmar) {
     const texto = typeof b?.texto === "string" ? b.texto : "";
     if (!texto.trim()) {
+      await recibo("previa", { chars: 0, erro: "campo vazio" });
       return NextResponse.json({ ok: false, error: "Cole a lista no campo acima." }, { status: 400 });
     }
     if (texto.length > 200_000) {
+      await recibo("previa", { chars: texto.length, erro: "texto acima de 200 mil caracteres" });
       return NextResponse.json({ ok: false, error: "A lista é grande demais. Divida em partes." }, { status: 413 });
     }
     const lidos = parseLeadList(texto, paisPadrao);
+    const amostra = texto.slice(0, 600);
     if (!lidos.length) {
+      await recibo("previa", { chars: texto.length, blocos: 0, erro: "nenhum bloco reconhecido", amostra });
       return NextResponse.json({
         ok: false,
         error: 'Não encontrei nenhuma clínica nesse texto. O formato esperado tem uma linha "Nome da clínica:" para cada uma.',
@@ -80,6 +96,15 @@ export async function POST(req: NextRequest) {
     const cortados = lidos.length > LIMITE ? lidos.length - LIMITE : 0;
     const usar = lidos.slice(0, LIMITE).map((l) => ({ ...l, phone: normalizaFone(l.phone, l.country) }));
     const existentes = await marcarExistentes(usar);
+
+    await recibo("previa", {
+      chars: texto.length,
+      blocos: lidos.length,
+      com_telefone: usar.filter((l) => l.phone).length,
+      com_email: usar.filter((l) => l.email).length,
+      com_ficha: usar.filter((l) => l.responsavel || l.crmv || l.cnpj || l.sistema).length,
+      amostra,
+    });
 
     return NextResponse.json({
       ok: true,
@@ -99,7 +124,10 @@ export async function POST(req: NextRequest) {
 
   // --- Passo 2: gravar o que ela confirmou ----------------------------------
   const brutos = Array.isArray(b?.itens) ? (b.itens as unknown[]) : [];
-  if (!brutos.length) return NextResponse.json({ ok: false, error: "Nenhuma clínica selecionada." }, { status: 400 });
+  if (!brutos.length) {
+    await recibo("gravacao", { blocos: 0, erro: "nenhuma clinica marcada" });
+    return NextResponse.json({ ok: false, error: "Nenhuma clínica selecionada." }, { status: 400 });
+  }
   if (brutos.length > LIMITE) return NextResponse.json({ ok: false, error: `Importe no máximo ${LIMITE} por vez.` }, { status: 413 });
 
   const itens: Item[] = [];
@@ -119,9 +147,19 @@ export async function POST(req: NextRequest) {
       country, email, phone,
       subject: cleanText(o.subject, 200) || null,
       emailBody: typeof o.emailBody === "string" ? o.emailBody.slice(0, 20_000) : null,
+      // A ficha do Keep passava por aqui e era descartada: a previa mostrava
+      // responsavel, CRMV, CNPJ e raio-X, o insert pedia esses campos, e no meio
+      // esta limpeza montava o item sem eles. Resultado: gravava tudo null.
+      uf: (cleanText(o.uf, 2) || null)?.toUpperCase() ?? null,
+      nota: typeof o.nota === "string" ? o.nota.slice(0, 2_000) : null,
+      responsavel: cleanText(o.responsavel, 120) || null,
+      crmv: cleanText(o.crmv, 40) || null,
+      cnpj: cleanText(o.cnpj, 20) || null,
+      sistema: cleanText(o.sistema, 300) || null,
     });
   }
   if (!itens.length) {
+    await recibo("gravacao", { blocos: brutos.length, criados: 0, erro: "todas sem e-mail e sem telefone valido" });
     return NextResponse.json({ ok: false, error: "Nenhuma das clínicas tem e-mail ou telefone válido." }, { status: 422 });
   }
 
@@ -159,11 +197,13 @@ export async function POST(req: NextRequest) {
   }
 
   if (!novos.length) {
+    await recibo("gravacao", { blocos: brutos.length, criados: 0, pulados, erro: "todas ja estavam cadastradas" });
     return NextResponse.json({ ok: true, criados: 0, pulados, message: "Todas já estavam cadastradas." });
   }
 
   const { data, error } = await salesDb.from("leads").insert(novos).select("id,email");
   if (error) {
+    await recibo("gravacao", { blocos: brutos.length, criados: 0, pulados, erro: `insert falhou: ${error.message}` });
     return NextResponse.json({ ok: false, error: "Não consegui gravar as clínicas. Tente de novo." }, { status: 500 });
   }
 
@@ -191,6 +231,16 @@ export async function POST(req: NextRequest) {
       scheduled_for: new Date().toISOString(),
     }));
   if (rascunhos.length) await salesDb.from("outbox").insert(rascunhos);
+
+  await recibo("gravacao", {
+    blocos: brutos.length,
+    criados: criados.length,
+    pulados,
+    rascunhos: rascunhos.length,
+    com_telefone: itens.filter((i) => i.phone).length,
+    com_email: itens.filter((i) => i.email).length,
+    com_ficha: itens.filter((i) => i.responsavel || i.crmv || i.cnpj || i.sistema).length,
+  });
 
   return NextResponse.json({ ok: true, criados: criados.length, pulados, rascunhos: rascunhos.length });
 }
