@@ -22,6 +22,16 @@ type Row = {
   recommended: string; recommendedReason: string; messages: Msg[];
 };
 
+// Canais que a equipe registra na mao depois de falar com a clinica.
+// "wa_call" (ligacao PELO WhatsApp) e separado do WhatsApp escrito a pedido
+// dela: muita clinica avisa no perfil que nao atende ligacao, e as duas taxas
+// de resposta precisam ser comparaveis sem se misturar.
+const CONTATO_LABEL: Record<string, string> = {
+  whatsapp: "WhatsApp escrito",
+  wa_call: "Ligação no WhatsApp",
+  call: "Ligação comum",
+};
+
 const REC: Record<string, { label: string; key: string }> = {
   email: { label: "E-mail", key: "email" },
   ig_dm: { label: "Instagram DM", key: "ig" },
@@ -70,6 +80,7 @@ export default function PainelPage() {
   const [draft, setDraft] = useState<{ subject: string; body: string }>({ subject: "", body: "" });
   const [sending, setSending] = useState(false);
   const [sentTo, setSentTo] = useState<Record<string, string>>({});
+  const [registrando, setRegistrando] = useState<string | null>(null);
 
   useEffect(() => {
     const t = typeof window !== "undefined" ? localStorage.getItem("sysmax_viewer_token") ?? "" : "";
@@ -119,6 +130,29 @@ export default function PainelPage() {
     } catch {
       setRows((prev) => prev.map((r) => (r.leadId === leadId ? { ...r, stage: prevStage ?? "new" } : r)));
       setNote("Não foi possível salvar o status. Tente de novo.");
+    }
+  }
+
+  // Registrar contato feito POR FORA do painel (zap no aparelho dela, ligacao).
+  // Ate aqui a fila de prospectos nao tinha onde marcar isso: so a aba
+  // "Contato novo" registrava, e so para clinica cadastrada na mao. Quem
+  // trabalhava a fila ligando nao deixava rastro nenhum no relatorio.
+  async function registrarContato(leadId: string, canal: string, clinic: string) {
+    setRegistrando(`${leadId}:${canal}`);
+    try {
+      const res = await fetch("/api/painel/contato-manual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-token": token },
+        body: JSON.stringify({ leadId, channel: canal, sender: "Jéssica", body: `(${CONTATO_LABEL[canal]} registrado pelo painel)` }),
+      });
+      const j = await res.json().catch(() => ({ ok: res.ok }));
+      if (!j.ok) throw new Error();
+      setRows((prev) => prev.map((r) => (r.leadId === leadId && r.stage === "new" ? { ...r, stage: "engaged" } : r)));
+      setNote(`${clinic}: ${CONTATO_LABEL[canal]} registrado.`);
+    } catch {
+      setNote("Não consegui registrar o contato. Tente de novo.");
+    } finally {
+      setRegistrando(null);
     }
   }
 
@@ -285,6 +319,7 @@ export default function PainelPage() {
                 <p className="why">{r.recommendedReason}</p>
                 <div className="chips">
                   {waPhone && <a className="chip chip-wa" href={`https://wa.me/${waPhone}`} target="_blank" rel="noopener noreferrer">WhatsApp · {phoneDisplay(r.phone)}</a>}
+                  {waPhone && <a className="chip chip-wacall" href={`https://wa.me/${waPhone}`} target="_blank" rel="noopener noreferrer">Ligar pelo WhatsApp</a>}
                   {waPhone && <a className="chip" href={`tel:+${waPhone}`}>Ligar</a>}
                   {r.instagram && <a className="chip chip-ig" href={`https://instagram.com/${r.instagram}`} target="_blank" rel="noopener noreferrer">@{r.instagram}</a>}
                   {r.email && <a className="chip chip-em" href={`mailto:${r.email}?subject=${encodeURIComponent(primary?.subject ?? "")}&body=${encodeURIComponent(primary?.body ?? "")}`}>{r.email}</a>}
@@ -292,6 +327,18 @@ export default function PainelPage() {
                 </div>
                 {r.recommended === "whatsapp_manual" && (
                   <p className="note">O e-mail cadastrado é pessoal/inválido — envie por <b>WhatsApp</b>. O texto abaixo (rascunho de e-mail) serve de base; encurte para o tom de zap.</p>
+                )}
+                {waPhone && (
+                  <div className="regrow">
+                    <span className="reglbl">Falei com a clínica por:</span>
+                    {(["whatsapp", "wa_call", "call"] as const).map((c) => (
+                      <button key={c} className={`regbtn reg-${c}`}
+                        disabled={registrando === `${r.leadId}:${c}`}
+                        onClick={() => registrarContato(r.leadId, c, r.clinic)}>
+                        {registrando === `${r.leadId}:${c}` ? "Registrando…" : CONTATO_LABEL[c]}
+                      </button>
+                    ))}
+                  </div>
                 )}
                 <div className="stage-ctl" role="group" aria-label="Status do prospecto">
                   {STAGES.map((s) => (
@@ -835,6 +882,16 @@ const CSS = `
   .rec-ig{background:var(--ig-bg);color:var(--ig)}
   .rec-wa{background:var(--wa-bg);color:var(--wa)}
   .rec-call{background:var(--call-bg);color:var(--call)}
+  .rec-wacall{background:var(--wa-bg);color:var(--wa);box-shadow:inset 0 0 0 1.5px var(--wa)}
+  .chip-wacall{border-color:var(--wa);color:var(--wa);background:var(--wa-bg)}
+  .regrow{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin:10px 0 2px}
+  .reglbl{font-size:11.5px;font-weight:650;color:var(--muted)}
+  .regbtn{font-size:11.5px;font-weight:700;border:1px solid var(--border);background:var(--surface);color:var(--ink);padding:5px 11px;border-radius:7px;cursor:pointer}
+  .regbtn:hover{border-color:var(--accent)}
+  .regbtn:disabled{opacity:.6;cursor:progress}
+  .reg-whatsapp{border-color:color-mix(in srgb,var(--wa) 45%,var(--border));color:var(--wa)}
+  .reg-wa_call{border-color:var(--wa);color:var(--wa);background:var(--wa-bg)}
+  .reg-call{border-color:color-mix(in srgb,var(--call) 45%,var(--border));color:var(--call)}
   .titlewrap{display:flex;flex-direction:column;gap:2px}
   h3{margin:0;font-size:16.5px;line-height:1.25;letter-spacing:-.01em;text-wrap:balance}
   .loc{font-size:12.5px;color:var(--muted);font-weight:600}

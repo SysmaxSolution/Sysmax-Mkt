@@ -12,7 +12,10 @@ import { cleanText } from "@/crm/lead-intake";
 
 export const runtime = "nodejs";
 
-const CANAIS = ["whatsapp", "call", "ig_dm"] as const;
+// wa_call = ligacao PELO WhatsApp. Separado do "whatsapp" escrito a pedido
+// da captacao: sao caminhos com taxa de resposta diferente e ela quer medir
+// cada um sem misturar.
+const CANAIS = ["whatsapp", "wa_call", "call", "ig_dm"] as const;
 type Canal = (typeof CANAIS)[number];
 
 export async function POST(req: NextRequest) {

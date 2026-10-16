@@ -15,7 +15,7 @@ const badEmail = /(yahoo|gmail|hotmail|outlook|exemplo|example|seuemail|mysite|g
 // handle de IG quebrado (recurso do Facebook, path de post, etc.)
 const badIg = /\.php|^(p|reel|reels|explore|accounts|stories)$/i;
 
-const CH_LABEL: Record<string, string> = { email: "E-mail", whatsapp: "WhatsApp", call: "Ligação", ig_dm: "Instagram DM" };
+const CH_LABEL: Record<string, string> = { email: "E-mail", whatsapp: "WhatsApp", call: "Ligação", ig_dm: "Instagram DM", wa_call: "Ligação no WhatsApp" };
 
 type Lead = {
   id: string; name: string | null; company_name: string | null; city: string | null; uf: string | null; country?: string | null; opted_out?: boolean | null;
