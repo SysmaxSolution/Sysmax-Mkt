@@ -15,7 +15,7 @@ const badEmail = /(yahoo|gmail|hotmail|outlook|exemplo|example|seuemail|mysite|g
 // handle de IG quebrado (recurso do Facebook, path de post, etc.)
 const badIg = /\.php|^(p|reel|reels|explore|accounts|stories)$/i;
 
-const CH_LABEL: Record<string, string> = { email: "E-mail", whatsapp: "WhatsApp", call: "Ligação", ig_dm: "Instagram DM", wa_call: "Ligação no WhatsApp" };
+const CH_LABEL: Record<string, string> = { email: "E-mail", whatsapp: "WhatsApp", call: "Ligação", ig_dm: "Instagram DM", wa_call: "WhatsApp ligação" };
 
 type Lead = {
   id: string; name: string | null; company_name: string | null; city: string | null; uf: string | null; country?: string | null; opted_out?: boolean | null;
@@ -34,6 +34,22 @@ export async function GET(req: NextRequest) {
     salesDb.from("outbox").select("id,lead_id,channel,subject,body,status").in("status", ["draft", "approved"]).order("created_at", { ascending: false }).limit(2000),
   ]);
   if (le || oe) return NextResponse.json({ ok: false, error: (le ?? oe)?.message }, { status: 500 });
+
+  // Contatos que a equipe JA registrou na mao (status 'sent'): o cartao precisa
+  // mostrar quais botoes de "Falei com a clinica por:" ficam marcados, senao a
+  // marcacao some ao recarregar a pagina.
+  const { data: feitos } = await salesDb
+    .from("outbox")
+    .select("lead_id,channel")
+    .eq("status", "sent")
+    .in("channel", ["whatsapp", "wa_call", "call", "ig_dm"])
+    .limit(5000);
+  const contatosPorLead = new Map<string, Set<string>>();
+  for (const f of (feitos ?? []) as { lead_id: string; channel: string }[]) {
+    const set = contatosPorLead.get(f.lead_id) ?? new Set<string>();
+    set.add(f.channel);
+    contatosPorLead.set(f.lead_id, set);
+  }
 
   const leadById = new Map<string, Lead>((leads ?? []).map((l) => [l.id, l as Lead]));
   const byLead = new Map<string, Ob[]>();
@@ -84,6 +100,7 @@ export async function GET(req: NextRequest) {
       recommended: rec,
       recommendedReason: reason,
       messages: items.map((i) => ({ id: i.id, channel: i.channel, channelLabel: CH_LABEL[i.channel] ?? i.channel, subject: i.subject ?? null, body: i.body, status: i.status })),
+      contatos: [...(contatosPorLead.get(leadId) ?? [])],
     });
   }
 
@@ -115,6 +132,7 @@ export async function GET(req: NextRequest) {
       recommended: rec,
       recommendedReason: reason,
       messages: [],
+      contatos: [...(contatosPorLead.get(raw.id) ?? [])],
     });
   }
 

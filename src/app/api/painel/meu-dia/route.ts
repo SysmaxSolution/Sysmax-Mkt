@@ -17,7 +17,7 @@ const LABEL: Record<string, string> = {
   whatsapp: "WhatsApp",
   call: "Ligações",
   ig_dm: "Instagram DM",
-  wa_call: "Ligação no WhatsApp",
+  wa_call: "WhatsApp ligação",
 };
 
 export async function GET(req: NextRequest) {

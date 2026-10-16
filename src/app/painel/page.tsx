@@ -20,6 +20,7 @@ type Row = {
   clinic: string; city: string | null; uf: string | null; country?: string | null;
   phone: string | null; email: string | null; instagram: string | null; website: string | null;
   recommended: string; recommendedReason: string; messages: Msg[];
+  contatos?: string[];
 };
 
 // Canais que a equipe registra na mao depois de falar com a clinica.
@@ -28,7 +29,7 @@ type Row = {
 // de resposta precisam ser comparaveis sem se misturar.
 const CONTATO_LABEL: Record<string, string> = {
   whatsapp: "WhatsApp escrito",
-  wa_call: "Ligação no WhatsApp",
+  wa_call: "WhatsApp ligação",
   call: "Ligação comum",
 };
 
@@ -164,8 +165,10 @@ export default function PainelPage() {
       });
       const j = await res.json().catch(() => ({ ok: res.ok }));
       if (!j.ok) throw new Error();
-      setRows((prev) => prev.map((r) => (r.leadId === leadId && r.stage === "new" ? { ...r, stage: "engaged" } : r)));
-      setNote(`${clinic}: ${CONTATO_LABEL[canal]} registrado.`);
+      setRows((prev) => prev.map((r) => (r.leadId === leadId
+        ? { ...r, stage: r.stage === "new" ? "engaged" : r.stage, contatos: [...new Set([...(r.contatos ?? []), canal])] }
+        : r)));
+      setNote(`${clinic}: ${CONTATO_LABEL[canal]} marcado.`);
     } catch {
       setNote("Não consegui registrar o contato. Tente de novo.");
     } finally {
@@ -345,7 +348,14 @@ export default function PainelPage() {
                     </button>
                   )}
                   {r.instagram && <a className="chip chip-ig" href={`https://instagram.com/${r.instagram}`} target="_blank" rel="noopener noreferrer">@{r.instagram}</a>}
-                  {r.email && <a className="chip chip-em" href={`mailto:${r.email}?subject=${encodeURIComponent(primary?.subject ?? "")}&body=${encodeURIComponent(primary?.body ?? "")}`}>{r.email}</a>}
+                  {/* O envio de e-mail acontece aqui dentro ("Escrever e enviar"),
+                      entao o mailto so tirava ela do painel. Clique copia. */}
+                  {r.email && (
+                    <button className={`chip chip-em${copied === `mail-${r.leadId}` ? " done" : ""}`}
+                      onClick={() => copy(`mail-${r.leadId}`, r.email ?? "")}>
+                      {copied === `mail-${r.leadId}` ? "E-mail copiado ✓" : r.email}
+                    </button>
+                  )}
                   {r.website && <a className="chip chip-web" href={r.website} target="_blank" rel="noopener noreferrer">site</a>}
                 </div>
                 {r.recommended === "whatsapp_manual" && (
@@ -354,13 +364,17 @@ export default function PainelPage() {
                 {waPhone && (
                   <div className="regrow">
                     <span className="reglbl">Falei com a clínica por:</span>
-                    {(["whatsapp", "wa_call", "call"] as const).map((c) => (
-                      <button key={c} className={`regbtn reg-${c}`}
-                        disabled={registrando === `${r.leadId}:${c}`}
-                        onClick={() => registrarContato(r.leadId, c, r.clinic)}>
-                        {registrando === `${r.leadId}:${c}` ? "Registrando…" : CONTATO_LABEL[c]}
-                      </button>
-                    ))}
+                    {(["whatsapp", "wa_call", "call"] as const).map((c) => {
+                      const marcado = (r.contatos ?? []).includes(c);
+                      return (
+                        <button key={c} className={`regbtn reg-${c}${marcado ? " on" : ""}`}
+                          disabled={registrando === `${r.leadId}:${c}`}
+                          aria-pressed={marcado}
+                          onClick={() => registrarContato(r.leadId, c, r.clinic)}>
+                          {registrando === `${r.leadId}:${c}` ? "Marcando…" : CONTATO_LABEL[c]}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
                 <div className="stage-ctl" role="group" aria-label="Status do prospecto">
@@ -917,6 +931,9 @@ const CSS = `
   .reg-whatsapp{border-color:color-mix(in srgb,var(--wa) 45%,var(--border));color:var(--wa)}
   .reg-wa_call{border-color:var(--wa);color:var(--wa);background:var(--wa-bg)}
   .reg-call{border-color:color-mix(in srgb,var(--call) 45%,var(--border));color:var(--call)}
+  .regbtn.on{color:#fff}
+  .regbtn.reg-whatsapp.on,.regbtn.reg-wa_call.on{background:var(--wa);border-color:var(--wa)}
+  .regbtn.reg-call.on{background:var(--call);border-color:var(--call)}
   .titlewrap{display:flex;flex-direction:column;gap:2px}
   h3{margin:0;font-size:16.5px;line-height:1.25;letter-spacing:-.01em;text-wrap:balance}
   .loc{font-size:12.5px;color:var(--muted);font-weight:600}
