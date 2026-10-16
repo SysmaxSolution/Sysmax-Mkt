@@ -21,6 +21,7 @@ type Lead = {
   id: string; name: string | null; company_name: string | null; city: string | null; uf: string | null; country?: string | null; opted_out?: boolean | null;
   phone: string | null; email: string | null; instagram_handle: string | null; website: string | null;
   enrichment_status: string | null; stage: string | null;
+  retorno_em?: string | null; reuniao_em?: string | null;
 };
 type Ob = { id: string; lead_id: string; channel: string; subject: string | null; body: string; status: string };
 
@@ -30,7 +31,7 @@ export async function GET(req: NextRequest) {
   // source manual = clínica cadastrada à mão pela equipe no painel; sem isso
   // os contatos que ela mesma encontra não apareceriam na fila.
   const [{ data: leads, error: le }, { data: outbox, error: oe }] = await Promise.all([
-    salesDb.from("leads").select("id,name,company_name,city,uf,country,phone,email,instagram_handle,website,enrichment_status,stage,opted_out").in("source", ["places", "manual"]),
+    salesDb.from("leads").select("id,name,company_name,city,uf,country,phone,email,instagram_handle,website,enrichment_status,stage,opted_out,retorno_em,reuniao_em").in("source", ["places", "manual"]),
     salesDb.from("outbox").select("id,lead_id,channel,subject,body,status").in("status", ["draft", "approved"]).order("created_at", { ascending: false }).limit(2000),
   ]);
   if (le || oe) return NextResponse.json({ ok: false, error: (le ?? oe)?.message }, { status: 500 });
@@ -101,6 +102,8 @@ export async function GET(req: NextRequest) {
       recommendedReason: reason,
       messages: items.map((i) => ({ id: i.id, channel: i.channel, channelLabel: CH_LABEL[i.channel] ?? i.channel, subject: i.subject ?? null, body: i.body, status: i.status })),
       contatos: [...(contatosPorLead.get(leadId) ?? [])],
+      retornoEm: l.retorno_em ?? null,
+      reuniaoEm: l.reuniao_em ?? null,
     });
   }
 
@@ -133,6 +136,8 @@ export async function GET(req: NextRequest) {
       recommendedReason: reason,
       messages: [],
       contatos: [...(contatosPorLead.get(raw.id) ?? [])],
+      retornoEm: raw.retorno_em ?? null,
+      reuniaoEm: raw.reuniao_em ?? null,
     });
   }
 

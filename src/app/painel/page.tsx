@@ -21,6 +21,8 @@ type Row = {
   phone: string | null; email: string | null; instagram: string | null; website: string | null;
   recommended: string; recommendedReason: string; messages: Msg[];
   contatos?: string[];
+  retornoEm?: string | null;
+  reuniaoEm?: string | null;
 };
 
 // Canais que a equipe registra na mao depois de falar com a clinica.
@@ -68,6 +70,32 @@ const STAGE_ALIAS: Record<string, string> = { engaged: "new" };
 const stageKey = (s: string) => STAGE_ALIAS[s] ?? s;
 const STAGE_LABEL: Record<string, string> = { ...Object.fromEntries(STAGES.map((s) => [s.key, s.short])), engaged: "Aguardando" };
 
+// Formata para leitura: "17/10 às 14:00". Sem ano quando é o ano corrente.
+function quandoLegivel(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const dia = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  const hora = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  return `${dia} às ${hora}`;
+}
+
+// Valor para o <input type="datetime-local">, que não aceita fuso.
+function paraInput(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+// Venceu ou vence nas próximas horas = merece destaque forte no cartão.
+function venceu(iso: string | null | undefined): boolean {
+  if (!iso) return false;
+  const t = new Date(iso).getTime();
+  return !Number.isNaN(t) && t <= Date.now();
+}
+
 function phoneDisplay(p: string | null): string | null {
   if (!p) return null;
   const d = p.replace(/\D/g, "").replace(/^55/, "");
@@ -99,6 +127,7 @@ export default function PainelPage() {
   const [sending, setSending] = useState(false);
   const [sentTo, setSentTo] = useState<Record<string, string>>({});
   const [registrando, setRegistrando] = useState<string | null>(null);
+  const [agendaAberta, setAgendaAberta] = useState<string | null>(null);
 
   useEffect(() => {
     const t = typeof window !== "undefined" ? localStorage.getItem("sysmax_viewer_token") ?? "" : "";
@@ -155,24 +184,55 @@ export default function PainelPage() {
   // Ate aqui a fila de prospectos nao tinha onde marcar isso: so a aba
   // "Contato novo" registrava, e so para clinica cadastrada na mao. Quem
   // trabalhava a fila ligando nao deixava rastro nenhum no relatorio.
-  async function registrarContato(leadId: string, canal: string, clinic: string) {
+  // Alterna a marca: clicar de novo DESMARCA. Ela pediu em 16/10 — "dá pra
+  // marcar, mas não consigo desmarcar". Marca errada presa na tela é pior do
+  // que marca nenhuma.
+  async function alternarContato(leadId: string, canal: string, clinic: string, marcado: boolean) {
     setRegistrando(`${leadId}:${canal}`);
     try {
       const res = await fetch("/api/painel/contato-manual", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-admin-token": token },
-        body: JSON.stringify({ leadId, channel: canal, sender: "Jéssica", body: `(${CONTATO_LABEL[canal]} registrado pelo painel)` }),
+        body: JSON.stringify(marcado
+          ? { leadId, channel: canal, remover: true }
+          : { leadId, channel: canal, sender: "Jéssica", body: `(${CONTATO_LABEL[canal]} registrado pelo painel)` }),
+      });
+      const j = await res.json().catch(() => ({ ok: res.ok }));
+      if (!j.ok) throw new Error();
+      setRows((prev) => prev.map((r) => {
+        if (r.leadId !== leadId) return r;
+        const atuais = r.contatos ?? [];
+        const contatos = marcado ? atuais.filter((c) => c !== canal) : [...new Set([...atuais, canal])];
+        return { ...r, stage: !marcado && r.stage === "new" ? "engaged" : r.stage, contatos };
+      }));
+      setNote(`${clinic}: ${CONTATO_LABEL[canal]} ${marcado ? "desmarcado" : "marcado"}.`);
+    } catch {
+      setNote(`Não consegui ${marcado ? "desmarcar" : "marcar"}. Tente de novo.`);
+    } finally {
+      setRegistrando(null);
+    }
+  }
+
+  // Retorno e reunião combinados com a clínica. Vivem no cartão porque é onde
+  // ela está quando combina — e o painel destaca o que está vencendo.
+  async function salvarAgenda(leadId: string, tipo: "retorno" | "reuniao", quando: string, clinic: string) {
+    try {
+      const res = await fetch("/api/painel/agenda", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-token": token },
+        body: JSON.stringify({ leadId, tipo, quando }),
       });
       const j = await res.json().catch(() => ({ ok: res.ok }));
       if (!j.ok) throw new Error();
       setRows((prev) => prev.map((r) => (r.leadId === leadId
-        ? { ...r, stage: r.stage === "new" ? "engaged" : r.stage, contatos: [...new Set([...(r.contatos ?? []), canal])] }
+        ? { ...r, [tipo === "retorno" ? "retornoEm" : "reuniaoEm"]: j.quando }
         : r)));
-      setNote(`${clinic}: ${CONTATO_LABEL[canal]} marcado.`);
+      setAgendaAberta(null);
+      setNote(quando
+        ? `${clinic}: ${tipo === "retorno" ? "retorno" : "reunião"} marcado para ${quandoLegivel(j.quando)}.`
+        : `${clinic}: ${tipo === "retorno" ? "retorno" : "reunião"} apagado.`);
     } catch {
-      setNote("Não consegui registrar o contato. Tente de novo.");
-    } finally {
-      setRegistrando(null);
+      setNote("Não consegui salvar a data. Tente de novo.");
     }
   }
 
@@ -320,7 +380,13 @@ export default function PainelPage() {
             const ordered = primary ? [primary, ...r.messages.filter((m) => m !== primary)] : [];
             const waPhone = r.phone ? r.phone.replace(/\D/g, "") : null;
             return (
-              <article className="card" key={i}>
+              <article className={`card${venceu(r.retornoEm) || venceu(r.reuniaoEm) ? " card-alerta" : ""}`} key={i}>
+                {(venceu(r.retornoEm) || venceu(r.reuniaoEm)) && (
+                  <div className="alerta">
+                    {venceu(r.reuniaoEm) ? `Reunião: ${quandoLegivel(r.reuniaoEm)}` : `Retorno: ${quandoLegivel(r.retornoEm)}`}
+                    {" — chegou a hora"}
+                  </div>
+                )}
                 {/* Sem selo de canal recomendado nem de status no topo: ela leu a
                     tela e disse "nao vamos usar isso". O status ja aparece
                     colorido nos proprios botoes, logo abaixo. */}
@@ -366,13 +432,45 @@ export default function PainelPage() {
                         <button key={c} className={`regbtn reg-${c}${marcado ? " on" : ""}`}
                           disabled={registrando === `${r.leadId}:${c}`}
                           aria-pressed={marcado}
-                          onClick={() => registrarContato(r.leadId, c, r.clinic)}>
-                          {registrando === `${r.leadId}:${c}` ? "Marcando…" : CONTATO_LABEL[c]}
+                          title={marcado ? "Clique para desmarcar" : "Clique para marcar"}
+                          onClick={() => alternarContato(r.leadId, c, r.clinic, marcado)}>
+                          {registrando === `${r.leadId}:${c}` ? "…" : CONTATO_LABEL[c]}
                         </button>
                       );
                     })}
                   </div>
                 )}
+
+                <div className="regrow">
+                  <span className="reglbl">Combinei:</span>
+                  {(["retorno", "reuniao"] as const).map((t) => {
+                    const quando = t === "retorno" ? r.retornoEm : r.reuniaoEm;
+                    const chave = `${r.leadId}:${t}`;
+                    return (
+                      <button key={t} className={`regbtn reg-${t}${quando ? " on" : ""}`}
+                        aria-pressed={!!quando}
+                        onClick={() => setAgendaAberta((a) => (a === chave ? null : chave))}>
+                        {t === "retorno" ? "Retorno" : "Reunião"}{quando ? ` · ${quandoLegivel(quando)}` : ""}
+                      </button>
+                    );
+                  })}
+                </div>
+                {(["retorno", "reuniao"] as const).map((t) => (
+                  agendaAberta === `${r.leadId}:${t}` && (
+                    <div className="agrow" key={t}>
+                      <input className="cinput agdt" type="datetime-local"
+                        defaultValue={paraInput(t === "retorno" ? r.retornoEm : r.reuniaoEm)}
+                        id={`ag-${r.leadId}-${t}`} />
+                      <button className="csend agsave" onClick={() => {
+                        const el = document.getElementById(`ag-${r.leadId}-${t}`) as HTMLInputElement | null;
+                        salvarAgenda(r.leadId, t, el?.value ?? "", r.clinic);
+                      }}>Salvar</button>
+                      {(t === "retorno" ? r.retornoEm : r.reuniaoEm) && (
+                        <button className="ccancel" onClick={() => salvarAgenda(r.leadId, t, "", r.clinic)}>Apagar</button>
+                      )}
+                    </div>
+                  )
+                ))}
                 <div className="stage-ctl" role="group" aria-label="Status do prospecto">
                   {STAGES.map((s) => (
                     <button key={s.key} className={`stbtn st-${s.key}${stageKey(r.stage) === s.key ? " on" : ""}`}
@@ -930,6 +1028,15 @@ const CSS = `
   .regbtn.on{color:#fff}
   .regbtn.reg-whatsapp.on,.regbtn.reg-wa_call.on{background:var(--wa);border-color:var(--wa)}
   .regbtn.reg-call.on{background:var(--call);border-color:var(--call)}
+  .reg-retorno{border-color:color-mix(in srgb,var(--email) 45%,var(--border));color:var(--email)}
+  .reg-reuniao{border-color:color-mix(in srgb,var(--ig) 45%,var(--border));color:var(--ig)}
+  .regbtn.reg-retorno.on{background:var(--email);border-color:var(--email)}
+  .regbtn.reg-reuniao.on{background:var(--ig);border-color:var(--ig)}
+  .agrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:2px 0 4px}
+  .agdt{max-width:230px}
+  .agsave{padding:7px 16px;font-size:12.5px}
+  .card-alerta{border-color:var(--call);box-shadow:0 0 0 1px var(--call) inset}
+  .alerta{font-size:12.5px;font-weight:750;color:var(--call);background:var(--call-bg);border-radius:8px;padding:7px 10px}
   .titlewrap{display:flex;flex-direction:column;gap:2px}
   h3{margin:0;font-size:16.5px;line-height:1.25;letter-spacing:-.01em;text-wrap:balance}
   .loc{font-size:12.5px;color:var(--muted);font-weight:600}

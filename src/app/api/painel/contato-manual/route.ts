@@ -29,6 +29,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Canal inválido." }, { status: 400 });
   }
 
+  // Desmarcar: ela pediu em 16/10 -- "da pra marcar, mas nao consigo
+  // desmarcar". Marca errada que nao sai e pior que marca nenhuma, porque
+  // suja o relatorio e ela perde a confianca no que ve.
+  if (b?.remover === true) {
+    const { error: eDel } = await salesDb
+      .from("outbox")
+      .delete()
+      .eq("lead_id", leadId)
+      .eq("channel", channel)
+      .eq("status", "sent");
+    if (eDel) return NextResponse.json({ ok: false, error: "Não consegui desmarcar." }, { status: 500 });
+    return NextResponse.json({ ok: true, removido: true });
+  }
+
   const now = new Date().toISOString();
   const { error } = await salesDb.from("outbox").insert({
     lead_id: leadId,
