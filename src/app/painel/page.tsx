@@ -93,6 +93,19 @@ function roteiro(clinic: string, responsavel?: string | null): string {
   ].join("\n");
 }
 
+// O domínio do e-mail bate com o do site da clínica?
+// Pergunta dela em 16/10 diante de “administracao@sahv.com.br”: o domínio
+// não tinha o nome da empresa e ela desconfiou. Estava certa em conferir --
+// e naquele caso era sigla legítima (Santo Agostinho Hospital Veterinário,
+// sahv.com.br). O teste que vale não é “domínio = nome por extenso”, é
+// “domínio = o site da própria clínica”. Agora o cartão responde sozinho.
+function dominio(v?: string | null): string {
+  if (!v) return "";
+  const t = v.trim().toLowerCase();
+  const bruto = t.includes("@") ? t.split("@").pop()! : t.replace(/^https?:\/\//, "").split("/")[0];
+  return bruto.replace(/^www\./, "").replace(/[.,;]+$/, "");
+}
+
 // Formata para leitura: "17/10 às 14:00". Sem ano quando é o ano corrente.
 function quandoLegivel(iso: string | null | undefined): string {
   if (!iso) return "";
@@ -536,6 +549,12 @@ export default function PainelPage() {
                       onClick={() => copy(`mail-${r.leadId}`, r.email ?? "")}>
                       {copied === `mail-${r.leadId}` ? "E-mail copiado ✓" : r.email}
                     </button>
+                  )}
+                  {(estrangeira || soEmail(r) || verTudo) && r.email && r.website
+                    && dominio(r.email) === dominio(r.website) && (
+                    <span className="chip chip-conf" title={`O e-mail usa o mesmo domínio do site: ${dominio(r.website)}`}>
+                      domínio do site ✓
+                    </span>
                   )}
                   {verTudo && r.instagram && (
                     <a className="chip chip-ig" href={`https://instagram.com/${r.instagram}`} target="_blank" rel="noopener noreferrer">@{r.instagram}</a>
@@ -1241,6 +1260,7 @@ const CSS = `
   .chip{font-size:12.5px;text-decoration:none;color:var(--ink);background:var(--surface-2);border:1px solid var(--border);padding:5px 10px;border-radius:8px;font-weight:600;white-space:nowrap}
   .chip:hover{border-color:var(--accent)}
   .chip-wa{color:var(--wa)} .chip-ig{color:var(--ig)} .chip-em{color:var(--email)} .chip-web{color:var(--muted);font-weight:500}
+  .chip-conf{color:var(--wa);background:var(--wa-bg);border-color:color-mix(in srgb,var(--wa) 35%,var(--border));font-weight:650}
   .chip-off{color:var(--muted);font-weight:500;font-style:italic;background:transparent;border-style:dashed}
   button.chip{cursor:pointer;font-family:inherit}
   button.chip.done{border-color:var(--wa);background:var(--wa-bg)}
