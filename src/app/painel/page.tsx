@@ -1,5 +1,6 @@
 "use client";
 
+import VideosView from "./VideosView";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import NovoContato from "./NovoContato";
 import MeuDia from "./MeuDia";
@@ -151,7 +152,7 @@ export default function PainelPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [filter, setFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [view, setView] = useState<"leads" | "novo" | "importar" | "material" | "dia" | "mes" | "posts" | "site">("leads");
+  const [view, setView] = useState<"leads" | "novo" | "importar" | "material" | "dia" | "mes" | "posts" | "site" | "videos">("leads");
   const [q, setQ] = useState("");
   const [state, setState] = useState<"idle" | "loading" | "authed" | "error">("idle");
   const [note, setNote] = useState("");
@@ -474,6 +475,7 @@ export default function PainelPage() {
           <button className={view === "leads" ? "on" : ""} onClick={() => setView("leads")}>Prospectos</button>
           <button className={view === "novo" ? "on" : ""} onClick={() => setView("novo")}>Contato novo</button>
           <button className={view === "importar" ? "on" : ""} onClick={() => setView("importar")}>Importar lista</button>
+          <button className={view === "videos" ? "on" : ""} onClick={() => setView("videos")}>Vídeos</button>
           <button className={view === "material" ? "on" : ""} onClick={() => setView("material")}>Enviar material</button>
           <button className={view === "dia" ? "on" : ""} onClick={() => setView("dia")}>Meu dia</button>
           <button className={view === "mes" ? "on" : ""} onClick={() => setView("mes")}>Relatório do mês</button>
@@ -515,7 +517,7 @@ export default function PainelPage() {
         )}
 
 
-        {view === "mes" ? <RelatorioMensal token={token} /> : view === "material" ? <EnviarMaterial token={token} /> : view === "importar" ? <ImportarLista token={token} onImportou={() => load(token)} /> : view === "novo" ? <NovoContato token={token} onQuota={setQuota} /> : view === "dia" ? <MeuDia token={token} /> : view === "site" ? <SiteLeadsView token={token} /> : view === "posts" ? <PostsView token={token} /> : (
+        {view === "mes" ? <RelatorioMensal token={token} /> : view === "material" ? <EnviarMaterial token={token} /> : view === "videos" ? <VideosView token={token} /> : view === "importar" ? <ImportarLista token={token} onImportou={() => load(token)} /> : view === "novo" ? <NovoContato token={token} onQuota={setQuota} /> : view === "dia" ? <MeuDia token={token} /> : view === "site" ? <SiteLeadsView token={token} /> : view === "posts" ? <PostsView token={token} /> : (
         <>
         <header className="top">
           <div className="eyebrow">Sysmax Software · Esteira Comercial</div>
@@ -1400,6 +1402,14 @@ const CSS = `
   .impmain b{font-size:13px;color:var(--ink)}
   .impsub{font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis}
   .impwarn{align-self:flex-start;font-size:10.5px;font-weight:750;color:var(--call);background:var(--call-bg);padding:2px 7px;border-radius:5px;margin-top:2px}
+  .vidrow{display:flex;flex-direction:column;gap:6px;padding:14px 16px;border:1px solid var(--linha);border-radius:12px;background:var(--cartao)}
+  .vidrow.off{opacity:.55}
+  .vidtop{display:flex;align-items:center;gap:10px}
+  .vidtop b{font-size:14px;color:var(--ink)}
+  .vidgancho{margin:0;font-size:13.5px;font-weight:650;color:var(--accent-ink)}
+  .vidleg{margin:0;font-size:12px;line-height:1.5;color:var(--muted);white-space:pre-wrap}
+  .vidrow .crow{margin-top:6px}
+  .vidrow a.csend{text-decoration:none;display:inline-block}
   .impfalta{margin:0 0 10px;padding:11px 14px;border-radius:9px;border:2px solid var(--call);background:var(--call-bg);color:var(--call);font-size:13px;font-weight:650;line-height:1.45}
   .mailbtn.nodraft{display:inline-block;margin:10px 0 0;padding:7px 14px;font-size:12.5px}
   .fonechk{display:block;margin:-6px 0 10px;font-size:11.5px;font-weight:650;color:var(--accent-ink)}

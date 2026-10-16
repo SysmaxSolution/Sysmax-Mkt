@@ -16,9 +16,11 @@
 //     --inicio 40 --duracao 45 \
 //     --gancho "O prontuário já está pronto quando o tutor sai da sala." \
 //     --cta "Comece grátis em sysmaxsolutions.com" \
-//     [--saida nome.mp4] [--subir]
+//     --titulo "Consultório por voz" --legenda "texto pronto para publicar" \n//     [--saida nome.mp4] [--subir]
 //
-// --subir publica no bucket 'content' do Supabase e imprime a URL pública.
+// --subir publica no bucket 'content' do Supabase, imprime a URL pública e
+// registra o vídeo na prateleira (videos_tiktok), que é o que a aba "Vídeos"
+// do painel mostra. Link solto por WhatsApp se perde; a prateleira não.
 // Requer Playwright (chromium) + FFmpeg no PATH.
 // ===========================================================================
 import { chromium } from "playwright";
@@ -134,6 +136,17 @@ async function main() {
       if (error) throw error;
       const { data } = db.storage.from("content").getPublicUrl(caminho);
       console.log("url:", data.publicUrl);
+
+      // Prateleira: o painel lista daqui. Sem legenda o video seria entregue
+      // pela metade -- ela teria o arquivo e nada para escrever embaixo.
+      const legenda = arg("legenda", "");
+      const titulo = arg("titulo", gancho.slice(0, 60));
+      if (!legenda) console.log("aviso: sem --legenda, o video entra na prateleira sem texto para publicar");
+      const { error: eReg } = await db.from("videos_tiktok").upsert({
+        arquivo: saida, url: data.publicUrl, titulo, gancho, legenda, aula, duracao_seg: duracao,
+      }, { onConflict: "arquivo" });
+      if (eReg) console.error("nao registrou na prateleira:", eReg.message);
+      else console.log("prateleira:", titulo);
     }
   } finally {
     await rm(tmp, { recursive: true, force: true });
