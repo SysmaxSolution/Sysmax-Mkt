@@ -453,29 +453,7 @@ export default function PainelPage() {
             <button className="allbtn active" onClick={entrar}>Entrar</button>
           </div>
           {state === "loading" && <p className="sub">Carregando…</p>}
-          {testeAberto && (
-          <div className="novo" style={{ maxWidth: "100%", margin: "0 0 14px" }}>
-            <p className="nvhint">
-              Escreva e mande para você mesma. Chega no e-mail da equipe <b>exatamente</b> como chegaria na clínica — mesmo assunto,
-              mesmo rodapé, mesmo link de descadastro. <b>Nenhuma clínica recebe nada</b>,
-              e isso não gasta do limite do dia.
-            </p>
-            <label className="clabel" htmlFor="teste-subj">Assunto</label>
-            <input id="teste-subj" className="cinput" value={teste.subject} maxLength={200}
-              onChange={(e) => setTeste((t) => ({ ...t, subject: e.target.value }))} />
-            <label className="clabel" htmlFor="teste-body">Mensagem</label>
-            <textarea id="teste-body" className="ctext" rows={10} value={teste.body}
-              onChange={(e) => setTeste((t) => ({ ...t, body: e.target.value }))} />
-            <div className="crow">
-              <button className="csend" disabled={testando} onClick={enviarTesteSolto}>
-                {testando ? "Enviando..." : "Mandar para mim"}
-              </button>
-              <button className="ccancel" onClick={() => setTesteAberto(false)}>Fechar</button>
-            </div>
-          </div>
-        )}
-
-        {note && <p className="notemsg">{note}</p>}
+          {note && <p className="notemsg">{note}</p>}
         </div>
       </>
     );
@@ -501,7 +479,38 @@ export default function PainelPage() {
           <button className={view === "mes" ? "on" : ""} onClick={() => setView("mes")}>Relatório do mês</button>
           <button className={view === "posts" ? "on" : ""} onClick={() => setView("posts")}>Posts do dia</button>
           <button className={view === "site" ? "on" : ""} onClick={() => setView("site")}>Leads do site</button>
+          {/* Fora do grupo de abas: nao e um lugar, e uma ferramenta. Ela
+              procurou o teste dentro de "Contato novo" e dentro do filtro de
+              exterior (16/10) -- entao ele tem que estar a mao em qualquer
+              lugar do painel, nao escondido numa tela so. */}
+          <button className={`navtool${testeAberto ? " on" : ""}`} onClick={() => setTesteAberto((v) => !v)}
+            title="Manda uma mensagem de teste para o e-mail da equipe. Nenhuma clinica recebe.">
+            Testar e-mail
+          </button>
         </nav>
+
+        {testeAberto && (
+          <div className="novo" style={{ maxWidth: "100%", margin: "0 0 14px" }}>
+            <p className="nvhint">
+              Escreva e mande para você mesma. Chega no e-mail da equipe <b>exatamente</b> como chegaria na clínica — mesmo assunto,
+              mesmo rodapé, mesmo link de descadastro. <b>Nenhuma clínica recebe nada</b>,
+              e isso não gasta do limite do dia.
+            </p>
+            <label className="clabel" htmlFor="teste-subj">Assunto</label>
+            <input id="teste-subj" className="cinput" value={teste.subject} maxLength={200}
+              onChange={(e) => setTeste((t) => ({ ...t, subject: e.target.value }))} />
+            <label className="clabel" htmlFor="teste-body">Mensagem</label>
+            <textarea id="teste-body" className="ctext" rows={10} value={teste.body}
+              onChange={(e) => setTeste((t) => ({ ...t, body: e.target.value }))} />
+            <div className="crow">
+              <button className="csend" disabled={testando} onClick={enviarTesteSolto}>
+                {testando ? "Enviando..." : "Mandar para mim"}
+              </button>
+              <button className="ccancel" onClick={() => setTesteAberto(false)}>Fechar</button>
+            </div>
+          </div>
+        )}
+
 
         {view === "mes" ? <RelatorioMensal token={token} /> : view === "material" ? <EnviarMaterial token={token} /> : view === "importar" ? <ImportarLista token={token} onImportou={() => load(token)} /> : view === "novo" ? <NovoContato token={token} onQuota={setQuota} /> : view === "dia" ? <MeuDia token={token} /> : view === "site" ? <SiteLeadsView token={token} /> : view === "posts" ? <PostsView token={token} /> : (
         <>
@@ -1284,6 +1293,8 @@ const CSS = `
   .rec-ig{background:var(--ig-bg);color:var(--ig)}
   .rec-wa{background:var(--wa-bg);color:var(--wa)}
   .rec-call{background:var(--call-bg);color:var(--call)}
+  .navtool{margin-left:auto;border:1px dashed var(--accent)!important;color:var(--accent-ink)!important}
+  .navtool.on{background:var(--accent)!important;color:#fff!important;border-style:solid!important}
   .rec-wacall{background:var(--wa-bg);color:var(--wa);box-shadow:inset 0 0 0 1.5px var(--wa)}
   .chip-wacall{border-color:var(--wa);color:var(--wa);background:var(--wa-bg)}
   .regrow{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin:10px 0 2px}
