@@ -39,16 +39,33 @@ const REC: Record<string, { label: string; key: string }> = {
   call: { label: "Ligação", key: "call" },
 };
 
-// Estágios do funil (leads.stage) na linguagem do analista comercial.
+// Status no vocabulário de quem usa a tela. Pedido da captação em 16/10: ela
+// trabalha como no Google Keep, por COR, e com quatro significados só —
+// "é muita informação" para seis. E a palavra "perdido" não existe no
+// vocabulário dela: cliente não se perde, fica SEM INTERESSE.
+//
+//   branco   = aguardando, ninguém respondeu  → new (e engaged, ver abaixo)
+//   azul     = a recepção respondeu           → qualified
+//   verde    = falei com o DONO               → demo
+//   vermelho = sem interesse                  → lost
+//   + Virou cliente                           → won
+//
+// As chaves do banco continuam as mesmas (nada de migração nem de relatório
+// quebrado); o que muda é a leitura. "engaged" é escrito pelo sistema quando
+// ela registra um contato — e contato feito sem resposta É aguardando, então
+// ele aparece em branco junto com "new".
 const STAGES: { key: string; label: string; short: string }[] = [
-  { key: "new", label: "A contatar", short: "A contatar" },
-  { key: "engaged", label: "Contatado", short: "Contatado" },
-  { key: "qualified", label: "Respondeu", short: "Respondeu" },
-  { key: "demo", label: "Demo agendada", short: "Demo" },
+  { key: "new", label: "Aguardando", short: "Aguardando" },
+  { key: "qualified", label: "Recepção respondeu", short: "Recepção" },
+  { key: "demo", label: "Falei com o dono", short: "Dono" },
+  { key: "lost", label: "Sem interesse", short: "Sem interesse" },
   { key: "won", label: "Virou cliente", short: "Cliente" },
-  { key: "lost", label: "Perdido", short: "Perdido" },
 ];
-const STAGE_LABEL: Record<string, string> = Object.fromEntries(STAGES.map((s) => [s.key, s.short]));
+
+// "engaged" não tem botão próprio: é lido como aguardando.
+const STAGE_ALIAS: Record<string, string> = { engaged: "new" };
+const stageKey = (s: string) => STAGE_ALIAS[s] ?? s;
+const STAGE_LABEL: Record<string, string> = { ...Object.fromEntries(STAGES.map((s) => [s.key, s.short])), engaged: "Aguardando" };
 
 function phoneDisplay(p: string | null): string | null {
   if (!p) return null;
@@ -188,7 +205,7 @@ export default function PainelPage() {
   const total = rows.length;
   const statusCounts = useMemo(() => {
     const c: Record<string, number> = {};
-    for (const r of rows) c[r.stage] = (c[r.stage] ?? 0) + 1;
+    for (const r of rows) { const k = stageKey(r.stage); c[k] = (c[k] ?? 0) + 1; }
     return c;
   }, [rows]);
   const visible = useMemo(() => {
@@ -196,7 +213,7 @@ export default function PainelPage() {
     return rows.filter((r) => {
       const rk = REC[r.recommended]?.key ?? "call";
       const okF = filter === "all" || rk === filter;
-      const okS = statusFilter === "all" || r.stage === statusFilter;
+      const okS = statusFilter === "all" || stageKey(r.stage) === statusFilter;
       // Busca também por telefone e e-mail: a equipe precisa reencontrar a
       // clínica pelo número quando ela retorna o contato. Dígitos são
       // comparados sem máscara, então "11 93962" acha "5511939623300".
@@ -306,7 +323,7 @@ export default function PainelPage() {
                 <header className="card-top">
                   <div className="badges">
                     <div className={`rec rec-${rk}`}>{recLabel}</div>
-                    <div className={`stbadge st-${r.stage}`}>{STAGE_LABEL[r.stage] ?? r.stage}</div>
+                    <div className={`stbadge st-${stageKey(r.stage)}`}>{STAGE_LABEL[r.stage] ?? r.stage}</div>
                   </div>
                   <div className="titlewrap">
                     <h3>{r.clinic}</h3>
@@ -318,9 +335,15 @@ export default function PainelPage() {
                 </header>
                 <p className="why">{r.recommendedReason}</p>
                 <div className="chips">
-                  {waPhone && <a className="chip chip-wa" href={`https://wa.me/${waPhone}`} target="_blank" rel="noopener noreferrer">WhatsApp · {phoneDisplay(r.phone)}</a>}
-                  {waPhone && <a className="chip chip-wacall" href={`https://wa.me/${waPhone}`} target="_blank" rel="noopener noreferrer">Ligar pelo WhatsApp</a>}
-                  {waPhone && <a className="chip" href={`tel:+${waPhone}`}>Ligar</a>}
+                  {/* Sem atalho para o WhatsApp Web: ela não usa o zap por dentro
+                      do painel e pediu a tela mais limpa. O número fica à vista
+                      e um clique copia. */}
+                  {waPhone && (
+                    <button className={`chip chip-wa${copied === `fone-${r.leadId}` ? " done" : ""}`}
+                      onClick={() => copy(`fone-${r.leadId}`, phoneDisplay(r.phone) ?? "")}>
+                      {copied === `fone-${r.leadId}` ? "Número copiado ✓" : phoneDisplay(r.phone)}
+                    </button>
+                  )}
                   {r.instagram && <a className="chip chip-ig" href={`https://instagram.com/${r.instagram}`} target="_blank" rel="noopener noreferrer">@{r.instagram}</a>}
                   {r.email && <a className="chip chip-em" href={`mailto:${r.email}?subject=${encodeURIComponent(primary?.subject ?? "")}&body=${encodeURIComponent(primary?.body ?? "")}`}>{r.email}</a>}
                   {r.website && <a className="chip chip-web" href={r.website} target="_blank" rel="noopener noreferrer">site</a>}
@@ -342,7 +365,7 @@ export default function PainelPage() {
                 )}
                 <div className="stage-ctl" role="group" aria-label="Status do prospecto">
                   {STAGES.map((s) => (
-                    <button key={s.key} className={`stbtn st-${s.key}${r.stage === s.key ? " on" : ""}`}
+                    <button key={s.key} className={`stbtn st-${s.key}${stageKey(r.stage) === s.key ? " on" : ""}`}
                       onClick={() => setStage(r.leadId, s.key, r.clinic)} title={s.label}>{s.short}</button>
                   ))}
                 </div>
@@ -779,7 +802,7 @@ function SiteLeadsView({ token }: { token: string }) {
               <header className="card-top">
                 <div className="badges">
                   <div className={`rec ${r.source === "cadastro_free" ? "rec-email" : "rec-wa"}`}>{SITE_SOURCE_LABEL[r.source] ?? r.source}</div>
-                  <div className={`stbadge st-${r.stage}`}>{STAGE_LABEL[r.stage] ?? r.stage}</div>
+                  <div className={`stbadge st-${stageKey(r.stage)}`}>{STAGE_LABEL[r.stage] ?? r.stage}</div>
                 </div>
                 <div className="titlewrap">
                   <h3>{title}</h3>
@@ -805,7 +828,7 @@ function SiteLeadsView({ token }: { token: string }) {
               )}
               <div className="stage-ctl" role="group" aria-label="Status do lead">
                 {STAGES.map((s) => (
-                  <button key={s.key} className={`stbtn st-${s.key}${r.stage === s.key ? " on" : ""}`}
+                  <button key={s.key} className={`stbtn st-${s.key}${stageKey(r.stage) === s.key ? " on" : ""}`}
                     onClick={() => setStage(r.leadId, s.key, title)} title={s.label}>{s.short}</button>
                 ))}
               </div>
@@ -839,7 +862,9 @@ const CSS = `
     --border:#E1E7E3; --accent:#0E7C66; --accent-ink:#0A5A4A;
     --email:#4F46E5; --ig:#D6336C; --wa:#12925A; --call:#B45309;
     --email-bg:#EEF0FE; --ig-bg:#FDECF3; --wa-bg:#E6F5EC; --call-bg:#FBF0E1;
-    --st-new:#64748B; --st-engaged:#2563EB; --st-qualified:#0E7C66; --st-demo:#7C3AED; --st-won:#12925A; --st-lost:#B91C1C;
+    /* Padrão Keep da captação: branco/cinza=aguardando, azul=recepção,
+       verde=dono, vermelho=sem interesse. Cliente usa o teal da marca. */
+    --st-new:#64748B; --st-engaged:#64748B; --st-qualified:#2563EB; --st-demo:#12925A; --st-won:#0E7C66; --st-lost:#B91C1C;
     --shadow:0 1px 2px rgba(20,31,27,.04),0 4px 16px rgba(20,31,27,.05);
   }
   @media (prefers-color-scheme:dark){:root{
@@ -847,7 +872,7 @@ const CSS = `
     --border:#27332E; --accent:#2DD4BF; --accent-ink:#5EEAD4;
     --email:#8B93FF; --ig:#F472A6; --wa:#4FCB86; --call:#E0A45C;
     --email-bg:#1D2140; --ig-bg:#33202B; --wa-bg:#172B22; --call-bg:#2E2416;
-    --st-new:#94A3B8; --st-engaged:#7CA0FF; --st-qualified:#2DD4BF; --st-demo:#A78BFA; --st-won:#4FCB86; --st-lost:#F16A6A;
+    --st-new:#94A3B8; --st-engaged:#94A3B8; --st-qualified:#7CA0FF; --st-demo:#4FCB86; --st-won:#2DD4BF; --st-lost:#F16A6A;
     --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 18px rgba(0,0,0,.35);
   }}
   *{box-sizing:border-box}
@@ -900,6 +925,8 @@ const CSS = `
   .chip{font-size:12.5px;text-decoration:none;color:var(--ink);background:var(--surface-2);border:1px solid var(--border);padding:5px 10px;border-radius:8px;font-weight:600;white-space:nowrap}
   .chip:hover{border-color:var(--accent)}
   .chip-wa{color:var(--wa)} .chip-ig{color:var(--ig)} .chip-em{color:var(--email)} .chip-web{color:var(--muted);font-weight:500}
+  button.chip{cursor:pointer;font-family:inherit}
+  button.chip.done{border-color:var(--wa);background:var(--wa-bg)}
   .note{margin:0;font-size:12.5px;background:var(--call-bg);color:var(--call);border-radius:8px;padding:8px 10px}
   .note b{font-weight:750}
   .msg{border:1px solid var(--border);border-radius:11px;overflow:hidden;background:var(--surface)}
