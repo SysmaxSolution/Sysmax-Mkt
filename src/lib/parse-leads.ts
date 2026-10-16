@@ -17,6 +17,8 @@ export type ParsedLead = {
   phone: string | null;
   subject: string | null;
   emailBody: string | null;
+  uf: string | null;
+  nota: string | null;
   raw: string;
   warnings: string[];
 };
@@ -34,6 +36,59 @@ const PADROES: { re: RegExp; sigla: string }[] = PAISES.flatMap((p) => {
 });
 
 const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
+
+// Siglas dos estados: a lista que a equipe traz do caderno/Keep termina em
+// "Umuarama - Paraná" ou "Bauru - SP". Reconhecer isso resolve cidade, UF e,
+// de quebra, o pais -- sem UF a lista inteira entrava como se fosse dos EUA.
+const UFS: Record<string, string> = {
+  AC: "Acre", AL: "Alagoas", AP: "Amapá", AM: "Amazonas", BA: "Bahia", CE: "Ceará",
+  DF: "Distrito Federal", ES: "Espírito Santo", GO: "Goiás", MA: "Maranhão",
+  MT: "Mato Grosso", MS: "Mato Grosso do Sul", MG: "Minas Gerais", PA: "Pará",
+  PB: "Paraíba", PR: "Paraná", PE: "Pernambuco", PI: "Piauí", RJ: "Rio de Janeiro",
+  RN: "Rio Grande do Norte", RS: "Rio Grande do Sul", RO: "Rondônia", RR: "Roraima",
+  SC: "Santa Catarina", SP: "São Paulo", SE: "Sergipe", TO: "Tocantins",
+};
+const semAcento = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+const POR_NOME: Record<string, string> = Object.fromEntries(
+  Object.entries(UFS).map(([sigla, nome]) => [semAcento(nome), sigla]),
+);
+
+// "Umuarama - Paraná" / "Bauru - SP" / "Umuarama/PR" -> { city, uf }
+function cidadeUf(linha: string): { city: string; uf: string } | null {
+  const m = linha.trim().match(/^(.{2,60}?)\s*[-–—/]\s*([A-Za-zÀ-ú\s]{2,25})$/);
+  if (!m) return null;
+  const cauda = m[2].trim();
+  const uf = cauda.length === 2 ? cauda.toUpperCase() : POR_NOME[semAcento(cauda)];
+  if (!uf || !UFS[uf]) return null;
+  return { city: m[1].trim(), uf };
+}
+
+// Telefone brasileiro em texto livre: 10 ou 11 digitos com DDD, com ou sem o
+// 55 na frente. Rejeita data (8.10.26), CEP e CNPJ, que tambem sao numeros.
+function foneBr(linha: string): string | null {
+  const t = linha.trim();
+  if (/^(?:data|obs|cnpj|cep)\b/i.test(t)) return null;
+  if (/\d{2}[./-]\d{2}[./-]\d{2,4}/.test(t)) return null;          // data
+  if (/\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/.test(t)) return null;    // CNPJ
+  if (/\b\d{5}-?\d{3}\b/.test(t) && !/\d{4}-?\d{4}/.test(t)) return null; // CEP
+  const d = t.replace(/\D/g, "");
+  if (d.length === 13 && d.startsWith("55")) return d;
+  if (d.length === 12 && d.startsWith("55")) return d;
+  if (d.length === 11 || d.length === 10) return "55" + d;
+  return null;
+}
+
+// Linha que e so numero/endereco nao serve como nome de clinica.
+function pareceNome(t: string): boolean {
+  if (t.length < 3) return false;
+  if (foneBr(t)) return false;
+  if (EMAIL_RE.test(t)) return false;
+  if (/^(?:data|obs|cnpj|cep)\b/i.test(t)) return false;
+  if (/^(?:R\.|Rua|Av\.|Avenida|Alameda|Trav\.|Travessa|Rod\.|Rodovia)\b/i.test(t)) return false;
+  if (cidadeUf(t)) return false;
+  const digitos = (t.match(/\d/g) ?? []).length;
+  return digitos < t.length / 2;
+}
 // Telefone internacional em texto: + opcional, 8 a 15 dígitos com separadores.
 const PHONE_RE = /\+?\d[\d\s().-]{7,20}\d/;
 
@@ -72,6 +127,16 @@ function cidadeDe(local: string): string | null {
 // '=' / '---', linha em branco, ou o próprio rótulo de nome reiniciando.
 function dividirBlocos(texto: string): string[] {
   const normal = texto.replace(/\r\n/g, "\n");
+
+  // Lista de caderno nao tem rotulo nenhum: o que separa uma clinica da
+  // outra e a linha em branco. So vale quando NAO ha rotulo no texto todo --
+  // na lista que a IA monta, linha em branco aparece dentro do corpo do
+  // e-mail, e dividir ali picotaria a mensagem.
+  const temRotulo = normal.split("\n").some((l) => ROTULOS.clinic.test(l.trim()));
+  if (!temRotulo) {
+    const porLinhaVazia = normal.split(/\n[ \t]*\n/).map((b) => b.trim()).filter(Boolean);
+    if (porLinhaVazia.length > 1) return porLinhaVazia;
+  }
   const porSeparador = normal
     .split(/^\s*(?:[=*_-]{1,}|•)\s*$/m)
     .map((b) => b.trim())
@@ -152,18 +217,21 @@ export function parseLeadList(texto: string, paisPadrao = "US"): ParsedLead[] {
     // Sem rótulo de nome: usa a 1ª linha que não seja outro rótulo nem cabeçalho.
     let clinic = clinicM.valor;
     if (!clinic) {
+      // Sem rótulo: a 1ª linha que PAREÇA nome. Antes bastava ter 3 letras, e
+      // numa lista de caderno (telefone na 1ª linha) o telefone virava o nome
+      // da clínica.
       const cand = linhas.find((l) => {
         const t = l.trim();
         if (Object.values(ROTULOS).some((r) => r.test(t))) return false;
-        if (EMAIL_RE.test(t)) return false;
         if (/^[A-ZÀ-Ú\s\d().—–-]{6,}$/.test(t) && !/[a-zà-ú]/.test(t)) return false; // cabeçalho em CAIXA ALTA
-        return t.length > 2;
+        return pareceNome(t);
       });
       clinic = cand?.trim() ?? null;
     }
     if (!clinic) continue;
 
     const warnings: string[] = [];
+    const warnings_fone: string[] = [];
     const emailBruto = emailM.valor ?? "";
     const email = (emailBruto.match(EMAIL_RE) ?? bloco.match(EMAIL_RE) ?? [null])[0];
     if (email) {
@@ -174,25 +242,50 @@ export function parseLeadList(texto: string, paisPadrao = "US"): ParsedLead[] {
       warnings.push("sem e-mail");
     }
 
+    // O e-mail já procurava no bloco inteiro quando não havia rótulo; o
+    // telefone não — e numa lista de caderno ele nunca vem rotulado. Numa
+    // prospecção por WhatsApp, telefone perdido é a clínica perdida.
     const phoneBruto = phoneM.valor ?? "";
-    const phoneMatch = phoneBruto.match(PHONE_RE) ?? null;
-    const phone = phoneMatch ? phoneMatch[0].replace(/\D/g, "") : null;
+    let phone: string | null = null;
+    const comRotulo = phoneBruto.match(PHONE_RE);
+    if (comRotulo) phone = comRotulo[0].replace(/\D/g, "");
+    if (!phone) {
+      for (const l of linhas) {
+        const f = foneBr(l);
+        if (f) { phone = f; break; }
+      }
+    }
+    if (!phone) warnings_fone.push("sem telefone");
 
     const local = localM.valor ?? "";
-    const country = paisDe(local) ?? paisDe(bloco) ?? paisPadrao;
-    if (!paisDe(local) && !paisDe(bloco)) warnings.push(`país não identificado, assumi ${paisPadrao}`);
+    // "Umuarama - Paraná" numa linha solta resolve cidade, UF e país de uma
+    // vez. Sem isso, lista brasileira inteira entrava como se fosse dos EUA,
+    // que é o padrão do campo.
+    const linhaCidade = linhas.map((l) => cidadeUf(l)).find(Boolean) ?? null;
+    const country = linhaCidade ? "BR" : (paisDe(local) ?? paisDe(bloco) ?? paisPadrao);
+    if (!linhaCidade && !paisDe(local) && !paisDe(bloco)) {
+      warnings.push(`país não identificado, assumi ${paisPadrao}`);
+    }
+    // "obs: 13.10 - 9h - a clínica respondeu" é o histórico dela. Vai para a
+    // anotação da clínica em vez de se perder na importação.
+    const nota = linhas
+      .filter((l) => /^(?:obs|observa[çc][ãa]o|data\s+contato)\s*:/i.test(l.trim()))
+      .map((l) => l.trim())
+      .join(" | ") || null;
 
     out.push({
       clinic: clinic.slice(0, 160),
       contact: contactM.valor ? contactM.valor.slice(0, 120) : null,
-      city: cidadeDe(local),
+      city: linhaCidade?.city ?? cidadeDe(local),
       country,
       email: email ? email.toLowerCase() : null,
       phone,
       subject: subjectM.valor ? subjectM.valor.slice(0, 200) : null,
       emailBody,
+      uf: linhaCidade?.uf ?? null,
+      nota,
       raw: bloco,
-      warnings,
+      warnings: [...warnings, ...warnings_fone],
     });
   }
   return out;

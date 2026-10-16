@@ -24,6 +24,7 @@ type Item = {
   clinic: string; contact: string | null; city: string | null;
   country: string; email: string | null; phone: string | null;
   subject?: string | null; emailBody?: string | null;
+  uf?: string | null; nota?: string | null;
 };
 
 function normalizaFone(raw: string | null, country: string): string | null {
@@ -87,6 +88,7 @@ export async function POST(req: NextRequest) {
         clinic: l.clinic, contact: l.contact, city: l.city, country: l.country,
         email: l.email, phone: l.phone,
         subject: l.subject, emailBody: l.emailBody,
+        uf: l.uf, nota: l.nota,
         warnings: l.warnings,
         existing: jaExiste(existentes, l.email, l.phone),
       })),
@@ -140,12 +142,13 @@ export async function POST(req: NextRequest) {
       country: i.country,
       email: i.email,
       phone: i.phone,
+      uf: i.uf ?? null,
       stage: "new",
       source: "manual",
       legal_basis: "legitimo_interesse_b2b",
       consent_optin: false,
       discovered_at: agora,
-      notes: "Importada da lista extraída pela equipe comercial.",
+      notes: i.nota ? `Importada da lista da equipe. ${i.nota}` : "Importada da lista extraída pela equipe comercial.",
     });
   }
 
