@@ -23,6 +23,7 @@ type Row = {
   contatos?: string[];
   retornoEm?: string | null;
   reuniaoEm?: string | null;
+  nota?: string | null;
 };
 
 // Canais que a equipe registra na mao depois de falar com a clinica.
@@ -127,6 +128,8 @@ export default function PainelPage() {
   const [sentTo, setSentTo] = useState<Record<string, string>>({});
   const [registrando, setRegistrando] = useState<string | null>(null);
   const [agendaAberta, setAgendaAberta] = useState<string | null>(null);
+  const [notaAberta, setNotaAberta] = useState<string | null>(null);
+  const [salvandoNota, setSalvandoNota] = useState<string | null>(null);
 
   useEffect(() => {
     const t = typeof window !== "undefined" ? localStorage.getItem("sysmax_viewer_token") ?? "" : "";
@@ -209,6 +212,30 @@ export default function PainelPage() {
       setNote(`Não consegui ${marcado ? "desmarcar" : "marcar"}. Tente de novo.`);
     } finally {
       setRegistrando(null);
+    }
+  }
+
+  // O que foi dito na conversa. O painel registrava QUE houve contato e por
+  // qual canal, mas nao O QUE foi falado — e esse conteudo vivia so na memoria
+  // de quem ligou. Argumento dela em 16/10: o que e feito fora do painel nao
+  // tem controle nenhum.
+  async function salvarNota(leadId: string, texto: string, clinic: string) {
+    setSalvandoNota(leadId);
+    try {
+      const res = await fetch("/api/painel/nota", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-token": token },
+        body: JSON.stringify({ leadId, texto }),
+      });
+      const j = await res.json().catch(() => ({ ok: res.ok }));
+      if (!j.ok) throw new Error();
+      setRows((prev) => prev.map((r) => (r.leadId === leadId ? { ...r, nota: j.texto } : r)));
+      setNotaAberta(null);
+      setNote(`${clinic}: anotação salva.`);
+    } catch {
+      setNote("Não consegui salvar a anotação. Tente de novo.");
+    } finally {
+      setSalvandoNota(null);
     }
   }
 
@@ -447,6 +474,31 @@ export default function PainelPage() {
                         </button>
                       );
                     })}
+                  </div>
+                )}
+
+                <div className="regrow">
+                  <span className="reglbl">Anotação:</span>
+                  <button className={`regbtn reg-nota${r.nota ? " on" : ""}`}
+                    aria-pressed={!!r.nota}
+                    onClick={() => setNotaAberta((a) => (a === r.leadId ? null : r.leadId))}>
+                    {r.nota ? "Ver / editar" : "Escrever o que foi dito"}
+                  </button>
+                  {r.nota && notaAberta !== r.leadId && (
+                    <span className="notaprev">{r.nota.length > 90 ? r.nota.slice(0, 90) + "…" : r.nota}</span>
+                  )}
+                </div>
+                {notaAberta === r.leadId && (
+                  <div className="agrow notabox">
+                    <textarea className="ctext" rows={5} id={`nota-${r.leadId}`} defaultValue={r.nota ?? ""}
+                      placeholder="Com quem falei, o que a clínica usa hoje, o que reclamou, o que ficou combinado." />
+                    <div className="crow">
+                      <button className="csend agsave" disabled={salvandoNota === r.leadId} onClick={() => {
+                        const el = document.getElementById(`nota-${r.leadId}`) as HTMLTextAreaElement | null;
+                        salvarNota(r.leadId, el?.value ?? "", r.clinic);
+                      }}>{salvandoNota === r.leadId ? "Salvando…" : "Salvar anotação"}</button>
+                      <button className="ccancel" onClick={() => setNotaAberta(null)}>Fechar</button>
+                    </div>
                   </div>
                 )}
 
@@ -1042,6 +1094,11 @@ const CSS = `
   .regbtn.reg-retorno.on{background:var(--email);border-color:var(--email)}
   .regbtn.reg-reuniao.on{background:var(--ig);border-color:var(--ig)}
   .agrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:2px 0 4px}
+  .notabox{flex-direction:column;align-items:stretch}
+  .notabox .ctext{width:100%}
+  .reg-nota{border-color:color-mix(in srgb,var(--accent) 45%,var(--border));color:var(--accent-ink)}
+  .regbtn.reg-nota.on{background:var(--accent);border-color:var(--accent)}
+  .notaprev{font-size:12px;color:var(--muted);font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
   .agdt{max-width:230px}
   .agsave{padding:7px 16px;font-size:12.5px}
   .card-alerta{border-color:var(--call);box-shadow:0 0 0 1px var(--call) inset}
