@@ -57,8 +57,15 @@ const POR_NOME: Record<string, string> = Object.fromEntries(
   Object.entries(UFS).map(([sigla, nome]) => [semAcento(nome), sigla]),
 );
 
+// Nome de estabelecimento disfarcado de cidade: "Clinica Veterinaria PROVET -
+// Dourados - MS" casava como cidade "Clinica Veterinaria PROVET - Dourados".
+// Pior: a linha era entao descartada como candidata a NOME, e o nome da
+// clinica virava o nome da rua da linha seguinte.
+const NOME_DE_LUGAR = /cl[ií]nic|hospital|veterin|petshop|pet\s*shop|consult[óo]rio|agropec/i;
+
 // "Umuarama - Paraná" / "Bauru - SP" / "Umuarama/PR" -> { city, uf }
 function cidadeUf(linha: string): { city: string; uf: string } | null {
+  if (NOME_DE_LUGAR.test(linha)) return null;
   const m = linha.trim().match(/^(.{2,60}?)\s*[-–—/]\s*([A-Za-zÀ-ú\s]{2,25})$/);
   if (!m) return null;
   const cauda = m[2].trim();
@@ -82,13 +89,23 @@ function foneBr(linha: string): string | null {
   return null;
 }
 
+// Telefone brasileiro NO MEIO de uma linha com texto em volta:
+// "contato: zap: 11995086267 - ate 17:30". Tirar so os digitos da linha
+// inteira dava 15 digitos (o horario entrava junto) e o telefone se perdia.
+function foneEmTexto(linha: string): string | null {
+  const m = linha.match(/(?:\+?55[\s.-]?)?\(?\d{2}\)?[\s.-]?9?[\s.-]?\d{4}[\s.-]?\d{4}/);
+  return m ? foneBr(m[0]) : null;
+}
+
 // Linha que e so numero/endereco nao serve como nome de clinica.
 function pareceNome(t: string): boolean {
   if (t.length < 3) return false;
   if (foneBr(t)) return false;
   if (EMAIL_RE.test(t)) return false;
   if (/^(?:data|obs|cnpj|cep)\b/i.test(t)) return false;
-  if (/^(?:R\.|Rua|Av\.|Avenida|Alameda|Trav\.|Travessa|Rod\.|Rodovia)\b/i.test(t)) return false;
+  // "R. Albino Torraca, 842" nao casava: o \b depois do ponto exige transicao
+  // de palavra, e depois de "." vem espaco. Resultado: endereco virava nome.
+  if (/^(?:r|av|al|trav|rod|pç|pc)[.\s]|^(?:rua|avenida|alameda|travessa|rodovia|pra[çc]a|estrada)\s/i.test(t)) return false;
   if (cidadeUf(t)) return false;
   const digitos = (t.match(/\d/g) ?? []).length;
   return digitos < t.length / 2;
@@ -122,6 +139,9 @@ const KEEP = {
   // "Raio-X de Sistema (Agendamento Online): indícios de gestão tradicional..."
   sistema: /^raio-?\s?x\s+de\s+sistema[^:]*:\s*(.*)$/i,
   cnpj: /^cnpj\s*:\s*(.*)$/i,
+  // "Veterinario: Dra. Angela Maria" -- forma curta que ela usa no caderno
+  // para registrar por quem pedir. Mesmo valor do responsavel tecnico.
+  veterinario: /^(?:m[ée]dic[oa]\s+)?veterin[áa]ri[oa](?:\s+cl[íi]nic[oa])?\s*:\s*(.*)$/i,
 };
 
 const CNPJ_RE = /\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/;
@@ -149,12 +169,17 @@ function cidadeDe(local: string): string | null {
 function dividirBlocos(texto: string): string[] {
   const normal = texto.replace(/\r\n/g, "\n");
 
-  // Lista de caderno nao tem rotulo nenhum: o que separa uma clinica da
-  // outra e a linha em branco. So vale quando NAO ha rotulo no texto todo --
-  // na lista que a IA monta, linha em branco aparece dentro do corpo do
-  // e-mail, e dividir ali picotaria a mensagem.
-  const temRotulo = normal.split("\n").some((l) => ROTULOS.clinic.test(l.trim()));
-  if (!temRotulo) {
+  // Linha em branco separa uma clinica da outra. O unico caso em que isso
+  // NAO vale e quando a lista traz o corpo do e-mail junto, que e multi-linha
+  // e tem paragrafos -- dividir ali picotaria a mensagem.
+  //
+  // A regra anterior desligava a divisao ao encontrar UM rotulo 'Clinica:' em
+  // qualquer lugar do texto. Na carteira da captacao metade dos registros tem
+  // o rotulo e a outra metade nao, entao os sem rotulo eram engolidos pelo
+  // registro seguinte: 209 clinicas viravam 45, com o telefone de uma colado
+  // no nome da outra. Ligar para o numero errado e o pior defeito daqui.
+  const temCorpoEmail = normal.split("\n").some((l) => ROTULOS.emailBody.test(l.trim()));
+  if (!temCorpoEmail) {
     const porLinhaVazia = normal.split(/\n[ \t]*\n/).map((b) => b.trim()).filter(Boolean);
     if (porLinhaVazia.length > 1) return porLinhaVazia;
   }
@@ -265,7 +290,8 @@ export function parseLeadList(texto: string, paisPadrao = "US"): ParsedLead[] {
 
     // Ficha do Keep: responsável (e CRMV), CNPJ e sistema atual.
     const identidadeM = valorDoRotulo(linhas, KEEP.identidade);
-    const respM = valorDoRotulo(linhas, KEEP.responsavel);
+    const respTec = valorDoRotulo(linhas, KEEP.responsavel);
+    const respM = respTec.valor ? respTec : valorDoRotulo(linhas, KEEP.veterinario);
     const difM = valorDoRotulo(linhas, KEEP.diferencial);
     const sistM = valorDoRotulo(linhas, KEEP.sistema);
     const cnpjM = valorDoRotulo(linhas, KEEP.cnpj);
@@ -286,14 +312,18 @@ export function parseLeadList(texto: string, paisPadrao = "US"): ParsedLead[] {
     // O e-mail já procurava no bloco inteiro quando não havia rótulo; o
     // telefone não — e numa lista de caderno ele nunca vem rotulado. Numa
     // prospecção por WhatsApp, telefone perdido é a clínica perdida.
-    const phoneBruto = phoneM.valor ?? "";
+    // No caderno dela "contato:" quase sempre guarda o telefone, nao o nome
+    // de quem atende ("contato: zap (11) 99228-7445"). Se o valor tem
+    // telefone dentro, ele vale como telefone -- e nao vira nome de contato.
+    const contatoEhFone = contactM.valor ? foneEmTexto(contactM.valor) : null;
+    const phoneBruto = phoneM.valor ?? (contatoEhFone ? contactM.valor ?? "" : "");
     let phone: string | null = null;
     const comRotulo = phoneBruto.match(PHONE_RE);
     if (comRotulo) phone = comRotulo[0].replace(/\D/g, "");
     if (!phone && identidadeM.valor) phone = foneBr(identidadeM.valor);
     if (!phone) {
       for (const l of linhas) {
-        const f = foneBr(l);
+        const f = foneBr(l) ?? foneEmTexto(l);
         if (f) { phone = f; break; }
       }
     }
@@ -318,7 +348,7 @@ export function parseLeadList(texto: string, paisPadrao = "US"): ParsedLead[] {
 
     out.push({
       clinic: clinic.slice(0, 160),
-      contact: contactM.valor ? contactM.valor.slice(0, 120) : null,
+      contact: contactM.valor && !contatoEhFone ? contactM.valor.slice(0, 120) : null,
       city: linhaCidade?.city ?? cidadeDe(local),
       country,
       email: email ? email.toLowerCase() : null,
