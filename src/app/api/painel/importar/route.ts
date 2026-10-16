@@ -76,6 +76,11 @@ export async function POST(req: NextRequest) {
   // --- Passo 1: prévia ------------------------------------------------------
   if (!confirmar) {
     const texto = typeof b?.texto === "string" ? b.texto : "";
+    // Recibo de ENTRADA, antes de processar qualquer coisa. Tres tentativas
+    // dela sumiram sem deixar rastro (16/10): o recibo so era gravado DEPOIS
+    // de interpretar o texto, entao estouro de tempo ou queda no meio nao
+    // registrava nada e a resposta honesta virava "nao sei o que aconteceu".
+    await recibo("previa-inicio", { chars: texto.length, amostra: texto.slice(0, 600) });
     if (!texto.trim()) {
       await recibo("previa", { chars: 0, erro: "campo vazio" });
       return NextResponse.json({ ok: false, error: "Cole a lista no campo acima." }, { status: 400 });
@@ -124,6 +129,7 @@ export async function POST(req: NextRequest) {
 
   // --- Passo 2: gravar o que ela confirmou ----------------------------------
   const brutos = Array.isArray(b?.itens) ? (b.itens as unknown[]) : [];
+  await recibo("gravacao-inicio", { blocos: brutos.length });
   if (!brutos.length) {
     await recibo("gravacao", { blocos: 0, erro: "nenhuma clinica marcada" });
     return NextResponse.json({ ok: false, error: "Nenhuma clínica selecionada." }, { status: 400 });

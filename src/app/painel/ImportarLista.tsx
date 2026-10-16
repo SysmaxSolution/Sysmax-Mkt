@@ -21,6 +21,21 @@ type Item = {
   responsavel?: string | null; crmv?: string | null; cnpj?: string | null; sistema?: string | null;
 };
 
+// Quando a chamada de importacao falha de verdade (tempo estourado, resposta
+// que nao e JSON, erro do gateway), o servidor nao registra nada -- so o
+// navegador sabe. Ele conta, para a proxima pergunta "deu certo?" ter resposta.
+async function contarFalha(token: string, etapa: string, status: number, chars: number, detalhe: string) {
+  try {
+    await fetch("/api/painel/importar/falha", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-token": token },
+      body: JSON.stringify({ etapa, status, chars, detalhe }),
+    });
+  } catch {
+    /* se nem isso passa, e rede mesmo */
+  }
+}
+
 export default function ImportarLista({ token, onImportou }: { token: string; onImportou: () => void }) {
   const [texto, setTexto] = useState("");
   const [paisPadrao, setPaisPadrao] = useState("US");
@@ -38,16 +53,32 @@ export default function ImportarLista({ token, onImportou }: { token: string; on
         headers: { "Content-Type": "application/json", "x-admin-token": token },
         body: JSON.stringify({ texto, paisPadrao, confirmar: false }),
       });
-      const d = await res.json();
-      if (!d.ok) { setMsg({ kind: "err", text: d.error ?? "Não consegui ler a lista." }); return; }
-      setItens(d.itens);
+      const bruto = await res.text();
+      let d: { ok?: boolean; error?: string; itens?: Item[]; cortados?: number };
+      try {
+        d = JSON.parse(bruto);
+      } catch {
+        // Resposta que nao e JSON = a rota nem chegou a responder (tempo
+        // estourado, pagina de erro do gateway). Antes isso virava um
+        // "falha de rede" generico e o motivo se perdia.
+        await contarFalha(token, "previa", res.status, texto.length, bruto.slice(0, 200));
+        setMsg({ kind: "err", text: `O servidor respondeu erro ${res.status} e a lista não foi lida. Já registrei aqui — se o texto for muito grande, cole em partes menores.` });
+        return;
+      }
+      if (!d.ok) {
+        await contarFalha(token, "previa", res.status, texto.length, d.error ?? "");
+        setMsg({ kind: "err", text: d.error ?? "Não consegui ler a lista." });
+        return;
+      }
+      setItens(d.itens ?? []);
       setCortados(d.cortados ?? 0);
       // Já cadastradas e sem contato vêm desmarcadas: importar não faria nada.
       const desmarcar = new Set<number>();
       (d.itens as Item[]).forEach((i, idx) => { if (i.existing || (!i.email && !i.phone)) desmarcar.add(idx); });
       setFora(desmarcar);
-    } catch {
-      setMsg({ kind: "err", text: "Falha de rede ao analisar." });
+    } catch (e) {
+      await contarFalha(token, "previa", 0, texto.length, String(e).slice(0, 200));
+      setMsg({ kind: "err", text: "A conexão caiu no meio do envio. Se a lista for muito grande, cole em partes menores — já registrei aqui para eu conferir." });
     } finally { setBusy(false); }
   }
 
@@ -66,14 +97,27 @@ export default function ImportarLista({ token, onImportou }: { token: string; on
         headers: { "Content-Type": "application/json", "x-admin-token": token },
         body: JSON.stringify({ confirmar: true, paisPadrao, itens: escolhidos }),
       });
-      const d = await res.json();
-      if (!d.ok) { setMsg({ kind: "err", text: d.error ?? "Não consegui importar." }); return; }
+      const bruto = await res.text();
+      let d: { ok?: boolean; error?: string; criados?: number; pulados?: number; rascunhos?: number };
+      try {
+        d = JSON.parse(bruto);
+      } catch {
+        await contarFalha(token, "gravacao", res.status, 0, bruto.slice(0, 200));
+        setMsg({ kind: "err", text: `O servidor respondeu erro ${res.status} e nada foi gravado. Já registrei aqui.` });
+        return;
+      }
+      if (!d.ok) {
+        await contarFalha(token, "gravacao", res.status, 0, d.error ?? "");
+        setMsg({ kind: "err", text: d.error ?? "Não consegui importar." });
+        return;
+      }
       const extra = d.pulados ? ` ${d.pulados} já estavam cadastradas e foram puladas.` : "";
       const prontos = d.rascunhos ? ` ${d.rascunhos} já vieram com o e-mail escrito, é só conferir e enviar.` : "";
       setMsg({ kind: "ok", text: `${d.criados} clínica(s) importada(s).${extra}${prontos} Já aparecem na aba Prospectos.` });
       setItens(null); setTexto(""); onImportou();
-    } catch {
-      setMsg({ kind: "err", text: "Falha de rede ao importar." });
+    } catch (e) {
+      await contarFalha(token, "gravacao", 0, 0, String(e).slice(0, 200));
+      setMsg({ kind: "err", text: "A conexão caiu no meio da gravação. Já registrei aqui para eu conferir." });
     } finally { setBusy(false); }
   }
 
@@ -97,10 +141,17 @@ export default function ImportarLista({ token, onImportou }: { token: string; on
             <CampoPais valor={paisPadrao} onChange={setPaisPadrao} id="imp-pais"
               label="Se a lista não disser o país, considerar" />
           </div>
+          {texto.length > 60_000 && (
+            <p className="impfalta">
+              Esse texto tem <b>{texto.length.toLocaleString("pt-BR")}</b> caracteres. Lista muito
+              grande costuma travar no caminho — <b>cole em partes</b> (umas 30 clínicas por vez) que entra inteiro.
+            </p>
+          )}
           <div className="crow">
             <button className="csend" disabled={busy || !texto.trim()} onClick={analisar}>
               {busy ? "Lendo..." : "Analisar a lista"}
             </button>
+            {texto.trim() && <span className="chint">{texto.length.toLocaleString("pt-BR")} caracteres colados</span>}
           </div>
         </>
       )}
