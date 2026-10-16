@@ -113,7 +113,6 @@ function primaryOf(r: Row): Msg | undefined {
 export default function PainelPage() {
   const [token, setToken] = useState("");
   const [rows, setRows] = useState<Row[]>([]);
-  const [counts, setCounts] = useState<Record<string, number>>({ email: 0, ig: 0, wa: 0, call: 0 });
   const [filter, setFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [view, setView] = useState<"leads" | "novo" | "importar" | "material" | "dia" | "mes" | "posts" | "site">("leads");
@@ -142,7 +141,7 @@ export default function PainelPage() {
       if (res.status === 401) { setState("error"); setNote("Token inválido. Peça o link/senha de acesso à equipe da Sysmax."); setRows([]); return; }
       const data = await res.json();
       if (!data.ok) { setState("error"); setNote(data.error ?? "Falha ao carregar."); return; }
-      setRows(data.rows ?? []); setCounts(data.counts ?? {}); setState("authed");
+      setRows(data.rows ?? []); setState("authed");
     } catch { setState("error"); setNote("Falha de rede ao carregar."); }
   }, []);
 
@@ -271,11 +270,20 @@ export default function PainelPage() {
     for (const r of rows) { const k = stageKey(r.stage); c[k] = (c[k] ?? 0) + 1; }
     return c;
   }, [rows]);
+  // Brasil x exterior no lugar do canal recomendado. Decisao dela em 16/10:
+  // Instagram sai (rede social so entra em relatorio) e "Ligacao" sai por ser
+  // a mesma coisa que o WhatsApp na pratica. Sobram as duas pracas, que e como
+  // ela realmente divide o trabalho: telefone/zap aqui, e-mail la fora.
+  const praca = (r: Row) => ((r.country ?? "BR") === "BR" ? "br" : "exterior");
+  const pracaCounts = useMemo(() => {
+    const c = { br: 0, exterior: 0 };
+    for (const r of rows) c[praca(r) as "br" | "exterior"]++;
+    return c;
+  }, [rows]);
   const visible = useMemo(() => {
     const term = q.trim().toLowerCase();
     return rows.filter((r) => {
-      const rk = REC[r.recommended]?.key ?? "call";
-      const okF = filter === "all" || rk === filter;
+      const okF = filter === "all" || praca(r) === filter;
       const okS = statusFilter === "all" || stageKey(r.stage) === statusFilter;
       // Busca também por telefone e e-mail: a equipe precisa reencontrar a
       // clínica pelo número quando ela retorna o contato. Dígitos são
@@ -336,15 +344,13 @@ export default function PainelPage() {
         <header className="top">
           <div className="eyebrow">Sysmax Software · Esteira Comercial</div>
           <h1>Prospectos prontos para abordar</h1>
-          <p className="sub">{total} clínicas veterinárias com mensagem já redigida, cada uma no canal com maior chance de resposta. Clique num contato para abrir o canal; use <b>Copiar</b> para levar a mensagem. Ao contatar, marque o status conforme avança.</p>
+          <p className="sub">{total} clínicas na fila. No Brasil o caminho é telefone e WhatsApp; e-mail fica para o exterior. Marque como falou com a clínica, combine retorno ou reunião, e mude a cor conforme a conversa andar.</p>
         </header>
 
         <div className="kpis">
-          {kpi("all", total, "Todas prontas")}
-          {kpi("email", counts.email ?? 0, "E-mail", "email")}
-          {kpi("ig", counts.ig ?? 0, "Instagram DM", "ig")}
-          {kpi("wa", counts.wa ?? 0, "WhatsApp", "wa")}
-          {kpi("call", counts.call ?? 0, "Ligação", "call")}
+          {kpi("all", total, "Todas")}
+          {kpi("br", pracaCounts.br, "WhatsApp · Brasil", "wa")}
+          {kpi("exterior", pracaCounts.exterior, "E-mail · Exterior", "email")}
           <div className={`kpi kpi-won${statusFilter === "won" ? " active" : ""}`} onClick={() => setStatusFilter((s) => (s === "won" ? "all" : "won"))}>
             <div className="n tnum">{statusCounts.won ?? 0}</div>
             <div className="l"><span className="dot won" />Clientes fechados</div>
@@ -363,7 +369,6 @@ export default function PainelPage() {
 
         <div className="toolbar">
           <input className="search" type="search" placeholder="Buscar por clínica, cidade, país, e-mail ou telefone…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar" />
-          <button className={`allbtn${filter === "all" ? " active" : ""}`} onClick={() => setFilter("all")}>Ver todos os canais</button>
           {quota && (
             <span className={`quota${quota.remaining === 0 ? " zero" : ""}`} title="Limite diario que protege nosso dominio de cair em spam">
               E-mails hoje: {quota.sent}/{quota.cap}
