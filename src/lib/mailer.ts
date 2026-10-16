@@ -98,11 +98,39 @@ function logoUrl(): string | null {
   }
 }
 
-function montarHtml(texto: string, aviso: string, unsubUrl: string): string {
+// A marca vai ANEXADA e embutida (cid:), nao como link para imagem na web.
+// Imagem remota em e-mail de remetente desconhecido e o caso classico de
+// "nao aparece nada": o cliente bloqueia, ou o proxy falha, e a assinatura
+// vira um quadrado vazio. Anexo embutido viaja dentro da mensagem e aparece
+// sem depender de o leitor liberar imagem externa.
+// Busca uma vez por processo e guarda; se falhar, cai para a imagem remota,
+// que e melhor do que nenhuma.
+const LOGO_CID = "marca-sysmax";
+let logoBase64: string | null | undefined;
+
+async function carregarLogo(): Promise<string | null> {
+  if (logoBase64 !== undefined) return logoBase64;
+  logoBase64 = null;
+  const url = logoUrl();
+  if (url) {
+    try {
+      const r = await fetch(url);
+      if (r.ok) {
+        const buf = Buffer.from(await r.arrayBuffer());
+        if (buf.length > 0 && buf.length < 200_000) logoBase64 = buf.toString("base64");
+      }
+    } catch {
+      /* sem marca e melhor do que sem e-mail */
+    }
+  }
+  return logoBase64;
+}
+
+function montarHtml(texto: string, aviso: string, unsubUrl: string, embutida: boolean): string {
   const corpo = escapeHtml(texto.trim()).replace(/\r?\n/g, "<br>");
-  const logo = logoUrl();
-  const marca = logo
-    ? `<img src="${logo}" alt="Sysmax Software" width="200" height="40" style="display:block;border:0;outline:none;text-decoration:none">`
+  const src = embutida ? `cid:${LOGO_CID}` : logoUrl();
+  const marca = src
+    ? `<img src="${src}" alt="Sysmax Software" width="200" height="40" style="display:block;border:0;outline:none;text-decoration:none">`
     : `<span style="font:600 15px/1.4 Arial,Helvetica,sans-serif;color:#0f172a">Sysmax Software</span>`;
   return [
     '<div style="font:15px/1.6 Arial,Helvetica,sans-serif;color:#0f172a;max-width:560px">',
@@ -135,6 +163,7 @@ export async function sendEmail(args: {
   }
 
   const unsubUrl = buildUnsubscribeUrl(leadId, to);
+  const logo = await carregarLogo();
   const aviso = `Você recebeu este e-mail porque a ${process.env.MAIL_FROM_NAME ?? "Sysmax Software"} identificou sua clínica como possível interessada no SYSVETMAX (contato profissional B2B).`;
   const body = `${text.trim()}
 
@@ -147,12 +176,20 @@ Se não quiser mais receber, cancele aqui: ${unsubUrl}`;
     to: [to],
     subject,
     text: body,
-    html: montarHtml(text, aviso, unsubUrl),
+    html: montarHtml(text, aviso, unsubUrl, !!logo),
     headers: {
       "List-Unsubscribe": `<${unsubUrl}>`,
       "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
     },
   };
+  if (logo) {
+    payload.attachments = [{
+      filename: "sysmax.png",
+      content: logo,
+      content_type: "image/png",
+      content_id: LOGO_CID,
+    }];
+  }
   const replyTo = replyToList();
   if (replyTo) payload.reply_to = replyTo;
 
