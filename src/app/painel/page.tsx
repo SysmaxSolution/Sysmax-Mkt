@@ -166,6 +166,13 @@ export default function PainelPage() {
   // (flexibilize visualização SEMPRE)”. O que sumiu do cartão continua no
   // banco e volta inteiro com este botão — sem deploy, sem pedir nada a ninguém.
   const [verTudo, setVerTudo] = useState(false);
+  // Teste de e-mail SOLTO, fora de qualquer cartão. Ela tentou testar e não
+  // conseguiu (16/10): o botão só existia dentro do compositor de um cartão
+  // com e-mail, e no Brasil esses cartões quase não aparecem. Conferir o
+  // próprio e-mail não pode depender de achar a clínica certa.
+  const [testeAberto, setTesteAberto] = useState(false);
+  const [teste, setTeste] = useState({ subject: "", body: "" });
+  const [testando, setTestando] = useState(false);
   const [agendaAberta, setAgendaAberta] = useState<string | null>(null);
   const [notaAberta, setNotaAberta] = useState<string | null>(null);
   const [salvandoNota, setSalvandoNota] = useState<string | null>(null);
@@ -338,6 +345,23 @@ export default function PainelPage() {
     setNote("");
   }
 
+  async function enviarTesteSolto() {
+    if (!teste.subject.trim() || !teste.body.trim()) { setNote("Escreva o assunto e o texto do teste."); return; }
+    setTestando(true);
+    try {
+      const res = await fetch("/api/painel/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-token": token },
+        body: JSON.stringify({ subject: teste.subject, body: teste.body, teste: true }),
+      });
+      const d = await res.json().catch(() => ({ ok: res.ok }));
+      if (!d.ok) { setNote(d.error ?? "Não consegui enviar o teste."); return; }
+      setNote(`Teste enviado para ${d.to}. Nenhuma clínica recebeu nada.`);
+    } catch {
+      setNote("Falha de rede ao enviar o teste.");
+    } finally { setTestando(false); }
+  }
+
   async function sendMail(leadId: string, clinic: string, teste = false) {
     if (!draft.subject.trim() || !draft.body.trim()) { setNote("Preencha o assunto e o texto antes de enviar."); return; }
     setSending(true);
@@ -429,7 +453,29 @@ export default function PainelPage() {
             <button className="allbtn active" onClick={entrar}>Entrar</button>
           </div>
           {state === "loading" && <p className="sub">Carregando…</p>}
-          {note && <p className="notemsg">{note}</p>}
+          {testeAberto && (
+          <div className="novo" style={{ maxWidth: "100%", margin: "0 0 14px" }}>
+            <p className="nvhint">
+              Escreva e mande para você mesma. Chega no e-mail da equipe com <b>[TESTE]</b> no assunto,
+              com o mesmo rodapé e o mesmo link de descadastro do envio real. <b>Nenhuma clínica recebe nada</b>,
+              e isso não gasta do limite do dia.
+            </p>
+            <label className="clabel" htmlFor="teste-subj">Assunto</label>
+            <input id="teste-subj" className="cinput" value={teste.subject} maxLength={200}
+              onChange={(e) => setTeste((t) => ({ ...t, subject: e.target.value }))} />
+            <label className="clabel" htmlFor="teste-body">Mensagem</label>
+            <textarea id="teste-body" className="ctext" rows={10} value={teste.body}
+              onChange={(e) => setTeste((t) => ({ ...t, body: e.target.value }))} />
+            <div className="crow">
+              <button className="csend" disabled={testando} onClick={enviarTesteSolto}>
+                {testando ? "Enviando..." : "Mandar para mim"}
+              </button>
+              <button className="ccancel" onClick={() => setTesteAberto(false)}>Fechar</button>
+            </div>
+          </div>
+        )}
+
+        {note && <p className="notemsg">{note}</p>}
         </div>
       </>
     );
@@ -489,6 +535,10 @@ export default function PainelPage() {
 
         <div className="toolbar">
           <input className="search" type="search" placeholder="Buscar por clínica, cidade, país, e-mail ou telefone…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar" />
+          <button className={`allbtn${testeAberto ? " active" : ""}`} onClick={() => setTesteAberto((v) => !v)}
+            title="Manda uma mensagem de teste para o e-mail da equipe, para você ver como ela chega. Nenhuma clínica recebe.">
+            Testar e-mail
+          </button>
           <button className={`allbtn${verTudo ? " active" : ""}`} onClick={alternarVerTudo}
             title="Mostra tudo que o cartão guarda: site, Instagram, e-mail do Brasil e telefone sem WhatsApp. Nada foi apagado.">
             {verTudo ? "Modo enxuto" : "Ver tudo"}

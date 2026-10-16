@@ -25,7 +25,16 @@ export async function POST(req: NextRequest) {
   if (!isAuthorizedViewer(req)) return new NextResponse("unauthorized", { status: 401 });
 
   const p = (await req.json().catch(() => null)) as Body | null;
-  const leadId = p?.leadId?.trim();
+  let leadId = p?.leadId?.trim();
+
+  // No teste a clínica não importa: o destino é a própria equipe. Se vier sem
+  // leadId (teste solto, fora de qualquer cartão), escolhemos um lead com
+  // e-mail só para o link de descadastro sair igual ao real.
+  if (p?.teste === true && !leadId) {
+    const { data: qualquer } = await salesDb
+      .from("leads").select("id").not("email", "is", null).limit(1).maybeSingle();
+    leadId = qualquer?.id;
+  }
   const subject = p?.subject?.trim();
   const body = p?.body?.trim();
   if (!leadId || !subject || !body) {
