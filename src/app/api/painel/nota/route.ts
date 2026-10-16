@@ -30,8 +30,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Anotação grande demais." }, { status: 413 });
   }
 
-  const { error } = await salesDb.from("leads").update({ notes: texto || null }).eq("id", leadId);
-  if (error) return NextResponse.json({ ok: false, error: "Não consegui salvar a anotação." }, { status: 500 });
+  // A ficha que ela mantinha no Keep: quem pedir para falar, CRMV, CNPJ e o
+  // sistema que a clínica usa hoje. Nome do responsável é o campo que mais
+  // vale — "a Dra. Savana está?" abre porta que "o responsável" não abre.
+  const patch: Record<string, string | null> = {
+    notes: texto || null,
+    responsavel: cleanText(b?.responsavel, 160) || null,
+    crmv: cleanText(b?.crmv, 60) || null,
+    cnpj: cleanText(b?.cnpj, 30) || null,
+    current_software: cleanText(b?.sistema, 160) || null,
+  };
 
-  return NextResponse.json({ ok: true, texto: texto || null });
+  const { error } = await salesDb.from("leads").update(patch).eq("id", leadId);
+  if (error) return NextResponse.json({ ok: false, error: "Não consegui salvar a ficha." }, { status: 500 });
+
+  return NextResponse.json({ ok: true, texto: texto || null, ...patch });
 }

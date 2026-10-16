@@ -25,6 +25,10 @@ type Row = {
   reuniaoEm?: string | null;
   nota?: string | null;
   waValido?: boolean | null;
+  responsavel?: string | null;
+  crmv?: string | null;
+  cnpj?: string | null;
+  sistema?: string | null;
 };
 
 // Canais que a equipe registra na mao depois de falar com a clinica.
@@ -71,6 +75,23 @@ const STAGES: { key: string; label: string; short: string }[] = [
 const STAGE_ALIAS: Record<string, string> = { engaged: "new" };
 const stageKey = (s: string) => STAGE_ALIAS[s] ?? s;
 const STAGE_LABEL: Record<string, string> = { ...Object.fromEntries(STAGES.map((s) => [s.key, s.short])), engaged: "Aguardando" };
+
+// Roteiro de abordagem por WhatsApp, no formato que ela já usa: cumprimento,
+// quem fala, pedido pela pessoa certa -- e a resposta pronta para quando
+// perguntam do que se trata. Veio do modelo do Keep que ela mandou em 16/10.
+// Sem IA: é template. O que entra é o que sai.
+function roteiro(clinic: string, responsavel?: string | null): string {
+  const h = new Date().getHours();
+  const saudacao = h < 12 ? "Bom dia" : h < 18 ? "Boa tarde" : "Boa noite";
+  const pessoa = responsavel?.trim() ? responsavel.trim() : `o responsável da ${clinic}`;
+  return [
+    `Olá, ${saudacao.toLowerCase()}!`,
+    `Tudo bem? Me chamo Jéssica, falo da SysVetMax. Por gentileza, ${pessoa} está disponível por aqui hoje?`,
+    "",
+    "— se perguntarem do que se trata:",
+    "Estamos liberando uma degustação gratuita do nosso sistema de consultório e prontuários para a clínica, e eu gostaria de apresentar.",
+  ].join("\n");
+}
 
 // Formata para leitura: "17/10 às 14:00". Sem ano quando é o ano corrente.
 function quandoLegivel(iso: string | null | undefined): string {
@@ -220,19 +241,24 @@ export default function PainelPage() {
   // qual canal, mas nao O QUE foi falado — e esse conteudo vivia so na memoria
   // de quem ligou. Argumento dela em 16/10: o que e feito fora do painel nao
   // tem controle nenhum.
-  async function salvarNota(leadId: string, texto: string, clinic: string) {
+  async function salvarNota(
+    leadId: string, texto: string, clinic: string,
+    ficha?: { responsavel: string; crmv: string; cnpj: string; sistema: string },
+  ) {
     setSalvandoNota(leadId);
     try {
       const res = await fetch("/api/painel/nota", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-admin-token": token },
-        body: JSON.stringify({ leadId, texto }),
+        body: JSON.stringify({ leadId, texto, ...(ficha ?? {}) }),
       });
       const j = await res.json().catch(() => ({ ok: res.ok }));
       if (!j.ok) throw new Error();
-      setRows((prev) => prev.map((r) => (r.leadId === leadId ? { ...r, nota: j.texto } : r)));
+      setRows((prev) => prev.map((r) => (r.leadId === leadId
+        ? { ...r, nota: j.texto, responsavel: j.responsavel ?? null, crmv: j.crmv ?? null, cnpj: j.cnpj ?? null, sistema: j.current_software ?? null }
+        : r)));
       setNotaAberta(null);
-      setNote(`${clinic}: anotação salva.`);
+      setNote(`${clinic}: ficha salva.`);
     } catch {
       setNote("Não consegui salvar a anotação. Tente de novo.");
     } finally {
@@ -440,6 +466,13 @@ export default function PainelPage() {
                     "não existe ligação para telefone fixo, muito menos para
                     celular sem whatsapp validado". Site, @ e e-mail do Brasil
                     saíram da tela: não são o caminho que ela usa. */}
+                {(r.responsavel || r.crmv || r.cnpj || r.sistema) && (
+                  <div className="ficha">
+                    {r.responsavel && <span className="fichaq"><b>Falar com:</b> {r.responsavel}{r.crmv ? ` · ${r.crmv}` : ""}</span>}
+                    {r.sistema && <span><b>Usa hoje:</b> {r.sistema}</span>}
+                    {r.cnpj && <span><b>CNPJ:</b> {r.cnpj}</span>}
+                  </div>
+                )}
                 <div className="chips">
                   {waPhone && r.waValido === true && (
                     <button className={`chip chip-wa${copied === `fone-${r.leadId}` ? " done" : ""}`}
@@ -460,6 +493,16 @@ export default function PainelPage() {
                 {r.recommended === "whatsapp_manual" && (
                   <p className="note">O e-mail cadastrado é pessoal/inválido — envie por <b>WhatsApp</b>. O texto abaixo (rascunho de e-mail) serve de base; encurte para o tom de zap.</p>
                 )}
+                {waPhone && r.waValido === true && (
+                  <div className="regrow">
+                    <span className="reglbl">Abordagem:</span>
+                    <button className={`regbtn reg-roteiro${copied === `rot-${r.leadId}` ? " on" : ""}`}
+                      onClick={() => copy(`rot-${r.leadId}`, roteiro(r.clinic, r.responsavel))}>
+                      {copied === `rot-${r.leadId}` ? "Copiado ✓" : "Copiar roteiro do primeiro contato"}
+                    </button>
+                  </div>
+                )}
+
                 {waPhone && (
                   <div className="regrow">
                     <span className="reglbl">Falei com a clínica por:</span>
@@ -491,13 +534,34 @@ export default function PainelPage() {
                 </div>
                 {notaAberta === r.leadId && (
                   <div className="agrow notabox">
+                    <div className="nvgrid">
+                      <div className="nvf">
+                        <label className="clabel" htmlFor={`resp-${r.leadId}`}>Falar com (nome)</label>
+                        <input className="cinput" id={`resp-${r.leadId}`} defaultValue={r.responsavel ?? ""} placeholder="Dra. Savana Lilian Marcato" />
+                      </div>
+                      <div className="nvf">
+                        <label className="clabel" htmlFor={`crmv-${r.leadId}`}>CRMV</label>
+                        <input className="cinput" id={`crmv-${r.leadId}`} defaultValue={r.crmv ?? ""} placeholder="CRMV-PR 11094" />
+                      </div>
+                      <div className="nvf">
+                        <label className="clabel" htmlFor={`cnpj-${r.leadId}`}>CNPJ</label>
+                        <input className="cinput" id={`cnpj-${r.leadId}`} defaultValue={r.cnpj ?? ""} placeholder="30.134.819/0001-44" />
+                      </div>
+                      <div className="nvf">
+                        <label className="clabel" htmlFor={`sist-${r.leadId}`}>Sistema que usa hoje</label>
+                        <input className="cinput" id={`sist-${r.leadId}`} defaultValue={r.sistema ?? ""} placeholder="Sem agendamento online no perfil" />
+                      </div>
+                    </div>
+                    <label className="clabel" htmlFor={`nota-${r.leadId}`}>O que descobri / o que foi dito</label>
                     <textarea className="ctext" rows={5} id={`nota-${r.leadId}`} defaultValue={r.nota ?? ""}
-                      placeholder="Com quem falei, o que a clínica usa hoje, o que reclamou, o que ficou combinado." />
+                      placeholder="Diferencial da clínica, com quem falei, o que reclamou, o que ficou combinado." />
                     <div className="crow">
                       <button className="csend agsave" disabled={salvandoNota === r.leadId} onClick={() => {
-                        const el = document.getElementById(`nota-${r.leadId}`) as HTMLTextAreaElement | null;
-                        salvarNota(r.leadId, el?.value ?? "", r.clinic);
-                      }}>{salvandoNota === r.leadId ? "Salvando…" : "Salvar anotação"}</button>
+                        const v = (pre: string) => (document.getElementById(`${pre}-${r.leadId}`) as HTMLInputElement | HTMLTextAreaElement | null)?.value ?? "";
+                        salvarNota(r.leadId, v("nota"), r.clinic, {
+                          responsavel: v("resp"), crmv: v("crmv"), cnpj: v("cnpj"), sistema: v("sist"),
+                        });
+                      }}>{salvandoNota === r.leadId ? "Salvando…" : "Salvar ficha"}</button>
                       <button className="ccancel" onClick={() => setNotaAberta(null)}>Fechar</button>
                     </div>
                   </div>
@@ -1099,6 +1163,12 @@ const CSS = `
   .notabox .ctext{width:100%}
   .reg-nota{border-color:color-mix(in srgb,var(--accent) 45%,var(--border));color:var(--accent-ink)}
   .regbtn.reg-nota.on{background:var(--accent);border-color:var(--accent)}
+  .ficha{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12.5px;color:var(--muted);background:var(--surface-2);border-radius:8px;padding:8px 11px}
+  .ficha b{color:var(--ink);font-weight:700}
+  .fichaq b{color:var(--accent-ink)}
+  .reg-roteiro{border-color:color-mix(in srgb,var(--accent) 45%,var(--border));color:var(--accent-ink)}
+  .regbtn.reg-roteiro.on{background:var(--accent);border-color:var(--accent)}
+  .notabox .nvgrid{width:100%}
   .notaprev{font-size:12px;color:var(--muted);font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
   .agdt{max-width:230px}
   .agsave{padding:7px 16px;font-size:12.5px}
