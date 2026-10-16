@@ -25,6 +25,7 @@ type Item = {
   country: string; email: string | null; phone: string | null;
   subject?: string | null; emailBody?: string | null;
   uf?: string | null; nota?: string | null;
+  responsavel?: string | null; crmv?: string | null; cnpj?: string | null; sistema?: string | null;
 };
 
 function normalizaFone(raw: string | null, country: string): string | null {
@@ -89,6 +90,7 @@ export async function POST(req: NextRequest) {
         email: l.email, phone: l.phone,
         subject: l.subject, emailBody: l.emailBody,
         uf: l.uf, nota: l.nota,
+        responsavel: l.responsavel, crmv: l.crmv, cnpj: l.cnpj, sistema: l.sistema,
         warnings: l.warnings,
         existing: jaExiste(existentes, l.email, l.phone),
       })),
@@ -143,6 +145,10 @@ export async function POST(req: NextRequest) {
       email: i.email,
       phone: i.phone,
       uf: i.uf ?? null,
+      responsavel: i.responsavel ?? null,
+      crmv: i.crmv ?? null,
+      cnpj: i.cnpj ?? null,
+      current_software: i.sistema ?? null,
       stage: "new",
       source: "manual",
       legal_basis: "legitimo_interesse_b2b",

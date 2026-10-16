@@ -19,6 +19,10 @@ export type ParsedLead = {
   emailBody: string | null;
   uf: string | null;
   nota: string | null;
+  responsavel: string | null;
+  crmv: string | null;
+  cnpj: string | null;
+  sistema: string | null;
   raw: string;
   warnings: string[];
 };
@@ -105,6 +109,23 @@ const ROTULOS = {
   subject: /^(?:assunto(?:\s+e-?mail)?|subject)\s*:\s*(.*)$/i,
   emailBody: /^(?:texto(?:\s+(?:do\s+)?e-?mail)?|corpo(?:\s+do\s+e-?mail)?|mensagem|body)\s*:\s*(.*)$/i,
 };
+
+// Rótulos do modelo que a captação usa no Keep (recebido em 16/10). A ficha
+// dela tem mais coisa que a lista da IA: responsável técnico com CRMV, CNPJ,
+// diferencial e o "raio-X de sistema" — que é o sinal de dor que a gente vende.
+const KEEP = {
+  // "Nome da Clínica + Telefone + CNPJ: Savana — (44) 99741-9377 — CNPJ: 30.134.819/0001-44"
+  identidade: /^nome\s+da\s+cl[ií]nica\s*\+\s*telefone(?:\s*\+\s*cnpj)?\s*:\s*(.*)$/i,
+  // "Responsável Técnico (RT / CRMV) / Veterinário Clínico: Dra. X (CRMV-PR 11094)"
+  responsavel: /^respons[áa]vel\s+t[ée]cnico[^:]*:\s*(.*)$/i,
+  diferencial: /^diferencial(?:\s+da\s+cl[ií]nica)?\s*:\s*(.*)$/i,
+  // "Raio-X de Sistema (Agendamento Online): indícios de gestão tradicional..."
+  sistema: /^raio-?\s?x\s+de\s+sistema[^:]*:\s*(.*)$/i,
+  cnpj: /^cnpj\s*:\s*(.*)$/i,
+};
+
+const CNPJ_RE = /\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/;
+const CRMV_RE = /CRMV[\s-]?[A-Z]{2}\s*n?º?\s*\d{3,6}/i;
 
 function paisDe(texto: string): string | null {
   // Compara sem acento: a lista chega com "Mexico" e "México" misturados.
@@ -242,6 +263,26 @@ export function parseLeadList(texto: string, paisPadrao = "US"): ParsedLead[] {
       warnings.push("sem e-mail");
     }
 
+    // Ficha do Keep: responsável (e CRMV), CNPJ e sistema atual.
+    const identidadeM = valorDoRotulo(linhas, KEEP.identidade);
+    const respM = valorDoRotulo(linhas, KEEP.responsavel);
+    const difM = valorDoRotulo(linhas, KEEP.diferencial);
+    const sistM = valorDoRotulo(linhas, KEEP.sistema);
+    const cnpjM = valorDoRotulo(linhas, KEEP.cnpj);
+
+    const cnpj = (cnpjM.valor?.match(CNPJ_RE)
+      ?? identidadeM.valor?.match(CNPJ_RE)
+      ?? bloco.match(CNPJ_RE) ?? [null])[0];
+
+    // "Dra. Savana Lilian Marcato (CRMV-PR 11094)" -> nome e registro separados.
+    const respBruto = respM.valor ?? "";
+    const crmv = (respBruto.match(CRMV_RE) ?? bloco.match(CRMV_RE) ?? [null])[0];
+    const responsavel = respBruto
+      ? respBruto.replace(CRMV_RE, "").replace(/[()\[\]]/g, " ").replace(/\s{2,}/g, " ").trim() || null
+      : null;
+
+    const sistema = sistM.valor?.trim() || null;
+
     // O e-mail já procurava no bloco inteiro quando não havia rótulo; o
     // telefone não — e numa lista de caderno ele nunca vem rotulado. Numa
     // prospecção por WhatsApp, telefone perdido é a clínica perdida.
@@ -249,6 +290,7 @@ export function parseLeadList(texto: string, paisPadrao = "US"): ParsedLead[] {
     let phone: string | null = null;
     const comRotulo = phoneBruto.match(PHONE_RE);
     if (comRotulo) phone = comRotulo[0].replace(/\D/g, "");
+    if (!phone && identidadeM.valor) phone = foneBr(identidadeM.valor);
     if (!phone) {
       for (const l of linhas) {
         const f = foneBr(l);
@@ -271,6 +313,7 @@ export function parseLeadList(texto: string, paisPadrao = "US"): ParsedLead[] {
     const nota = linhas
       .filter((l) => /^(?:obs|observa[çc][ãa]o|data\s+contato)\s*:/i.test(l.trim()))
       .map((l) => l.trim())
+      .concat(difM.valor ? [`Diferencial: ${difM.valor.trim()}`] : [])
       .join(" | ") || null;
 
     out.push({
@@ -284,6 +327,10 @@ export function parseLeadList(texto: string, paisPadrao = "US"): ParsedLead[] {
       emailBody,
       uf: linhaCidade?.uf ?? null,
       nota,
+      responsavel,
+      crmv: crmv ?? null,
+      cnpj: cnpj ?? null,
+      sistema,
       raw: bloco,
       warnings: [...warnings, ...warnings_fone],
     });
