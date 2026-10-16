@@ -918,6 +918,14 @@ const CSS = `
   .fotoitem img{width:100%;height:100%;object-fit:cover;display:block}
   .fotodel{position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:999px;border:0;background:rgba(0,0,0,.62);color:#fff;font-size:14px;font-weight:800;line-height:1;cursor:pointer}
   .fotodel:hover{background:rgba(0,0,0,.82)}
+  .fotoitem:is(a){cursor:zoom-in}
+  .rmbadge{margin-left:9px;font-size:10.5px;font-weight:800;letter-spacing:.04em;padding:3px 8px;border-radius:999px;background:var(--call-bg);color:var(--call);vertical-align:middle}
+  .printlist{display:flex;flex-direction:column;gap:12px;margin-bottom:4px}
+  .printrow{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px}
+  .printinfo{display:flex;flex-direction:column;gap:2px;min-width:168px}
+  .printinfo b{font-size:13px;color:var(--ink)}
+  .printinfo span{font-size:11.5px;color:var(--muted)}
+  .printrow .fotogrid{margin:0}
   .postfotos{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 10px}
   .postfotos img{width:calc(50% - 4px);border-radius:9px;border:1px solid var(--border);display:block}
   .postfotos.one img{width:100%}

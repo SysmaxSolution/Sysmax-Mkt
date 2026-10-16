@@ -1,13 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import FotoPicker from "./FotoPicker";
 
 // ===========================================================================
 // Relatório mensal acumulado + lançamento dos números de rede social.
 // Ideia da captação: chegar na hora de investir sabendo ONDE o dinheiro rende,
 // em vez de apostar. Por isso a taxa de resposta por canal fica em destaque.
-// Usa as classes CSS injetadas por /painel.
+//
+// O print do relatório do Facebook entra aqui também: ela tira o print e, se
+// não quiser transcrever, deixa os campos em branco — a linha fica "a conferir"
+// e os números saem do print. Usa as classes CSS injetadas por /painel.
 // ===========================================================================
+
+type Print = {
+  canal: string; dia: string; fotos: string[]; conferir: boolean;
+  publicacoes: number | null; alcance: number | null;
+};
 
 type Dados = {
   mes: string;
@@ -17,6 +26,8 @@ type Dados = {
   clinicasNovas: number;
   porPais: { pais: string; total: number }[];
   redes: { canal: string; publicacoes: number; alcance: number }[];
+  prints: Print[];
+  aConferir: number;
   responderam: number;
   taxaResposta: number | null;
 };
@@ -42,8 +53,11 @@ export default function RelatorioMensal({ token }: { token: string }) {
   const [d, setD] = useState<Dados | null>(null);
   const [erro, setErro] = useState("");
   const [f, setF] = useState({ canal: "facebook_pagina", dia: hojeISO(), publicacoes: "", alcance: "", obs: "" });
+  const [fotos, setFotos] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  const fotoUrl = (p: string) => `/api/painel/material-foto?f=${encodeURIComponent(p)}&t=${encodeURIComponent(token)}`;
 
   const carregar = useCallback(async (m: string) => {
     setErro(""); setD(null);
@@ -57,20 +71,28 @@ export default function RelatorioMensal({ token }: { token: string }) {
   useEffect(() => { carregar(mes); }, [mes, carregar]);
 
   async function lancar() {
-    if (!f.publicacoes.trim()) { setMsg({ kind: "err", text: "Informe quantas publicações você fez." }); return; }
+    if (!f.publicacoes.trim() && !fotos.length) {
+      setMsg({ kind: "err", text: "Informe quantas publicações você fez, ou anexe o print do relatório." }); return;
+    }
     setBusy(true); setMsg(null);
     try {
       const res = await fetch("/api/painel/relatorio-mensal", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-admin-token": token },
-        body: JSON.stringify({ ...f, autor: "Jéssica" }),
+        body: JSON.stringify({ ...f, fotos, autor: "Jéssica" }),
       });
       const j = await res.json();
       if (!j.ok) { setMsg({ kind: "err", text: j.error ?? "Não consegui salvar." }); return; }
-      setMsg({ kind: "ok", text: "Números registrados. Já entraram no relatório." });
+      setMsg({
+        kind: "ok",
+        text: j.conferir
+          ? "Print guardado. Os números saem dele — não precisa digitar."
+          : "Números registrados. Já entraram no relatório.",
+      });
       setF((p) => ({ ...p, publicacoes: "", alcance: "", obs: "" }));
+      setFotos([]);
       carregar(mes);
-    } catch { setMsg({ kind: "err", text: "Falha de rede." }); }
+    } catch { setMsg({ kind: "err", text: "Falha de rede. Se o print for muito grande, tente um por vez." }); }
     finally { setBusy(false); }
   }
 
@@ -79,6 +101,7 @@ export default function RelatorioMensal({ token }: { token: string }) {
       <p className="nvhint">
         O acumulado do mês, para decidir <b>onde investir</b> quando houver orçamento — em vez de apostar.
         Lance abaixo as publicações e o alcance das redes: só você tem esses números, o painel não os enxerga sozinho.
+        Pode mandar só o print do relatório do Facebook, se preferir.
       </p>
 
       <div className="nvf" style={{ maxWidth: 220 }}>
@@ -118,8 +141,46 @@ export default function RelatorioMensal({ token }: { token: string }) {
           {d.porPessoa.length > 1 && (
             <p className="chint">Por pessoa: {d.porPessoa.map((p) => `${p.quem} (${p.total})`).join(" · ")}</p>
           )}
-          {!d.totalEnvios && !d.redes.length && !d.clinicasNovas && (
+          {!d.totalEnvios && !d.redes.length && !d.clinicasNovas && !(d.prints ?? []).length && (
             <p className="empty">Nada registrado neste mês ainda.</p>
+          )}
+
+          {!!(d.prints ?? []).length && (
+            <>
+              <h3 className="rmtit">
+                Prints do relatório ({d.prints.length})
+                {d.aConferir > 0 && <span className="rmbadge">{d.aConferir} a conferir</span>}
+              </h3>
+              {d.aConferir > 0 && (
+                <p className="chint">
+                  Os marcados <b>a conferir</b> ainda não têm número digitado — nós tiramos do print.
+                  Você não precisa fazer mais nada com eles.
+                </p>
+              )}
+              <div className="printlist">
+                {d.prints.map((p) => (
+                  <div className="printrow" key={`${p.canal}-${p.dia}`}>
+                    <div className="printinfo">
+                      <b>{p.canal}</b>
+                      <span>{new Date(`${p.dia}T12:00:00`).toLocaleDateString("pt-BR")}</span>
+                      <span>
+                        {p.conferir
+                          ? "a conferir"
+                          : `${p.publicacoes ?? 0} publicação(ões)${p.alcance ? ` · ${p.alcance} visualizações` : ""}`}
+                      </span>
+                    </div>
+                    <div className="fotogrid">
+                      {p.fotos.map((cam, i) => (
+                        <a className="fotoitem" key={cam} href={fotoUrl(cam)} target="_blank" rel="noopener noreferrer" title="Abrir em tamanho real">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={fotoUrl(cam)} alt={`print ${i + 1} de ${p.canal}`} loading="lazy" />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </>
       )}
@@ -151,6 +212,14 @@ export default function RelatorioMensal({ token }: { token: string }) {
           <input id="rm-obs" className="cinput" value={f.obs} onChange={(e) => setF((p) => ({ ...p, obs: e.target.value }))} />
         </div>
       </div>
+
+      <FotoPicker
+        fotos={fotos} setFotos={setFotos} rotulo="print" disabled={busy}
+        label="Print do relatório (opcional)"
+        ajuda="Print do relatório do Facebook, do Instagram ou de onde vier o número. Se anexar, pode deixar os campos de cima em branco: a linha fica “a conferir” e nós preenchemos pelo print."
+        onErro={(t) => setMsg(t ? { kind: "err", text: t } : null)}
+      />
+
       <p className="chint">Se lançar o mesmo canal e dia de novo, o número é corrigido — não soma duas vezes.</p>
       <div className="crow">
         <button className="csend" disabled={busy} onClick={lancar}>{busy ? "Salvando..." : "Registrar"}</button>

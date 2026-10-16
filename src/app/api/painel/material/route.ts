@@ -4,6 +4,7 @@ import { salesDb } from "@/lib/supabase";
 import { cleanText } from "@/crm/lead-intake";
 import { sendText, sendImage } from "@/lib/evolution";
 import { salvarFotos } from "@/lib/material-fotos";
+import { salvarNumeros } from "@/lib/social-metrics";
 
 // ===========================================================================
 // POST /api/painel/material — porta de entrada única para o material que a
@@ -52,33 +53,24 @@ export async function POST(req: NextRequest) {
   if (!TIPOS.includes(tipo)) return NextResponse.json({ ok: false, error: "Escolha o que é esse material." }, { status: 400 });
 
   if (tipo === "numeros") {
-    const canal = cleanText(b?.canal, 20) || "facebook_pagina";
-    const dia = cleanText(b?.dia, 10);
-    const publicacoes = Number(b?.publicacoes ?? 0);
-    const alcanceBruto = b?.alcance;
-    const alcance = alcanceBruto === "" || alcanceBruto === null || alcanceBruto === undefined ? null : Number(alcanceBruto);
-    if (!/^(facebook_pagina|facebook_grupos|instagram|outro)$/.test(canal)) {
-      return NextResponse.json({ ok: false, error: "Escolha o canal." }, { status: 400 });
-    }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dia)) return NextResponse.json({ ok: false, error: "Informe o dia." }, { status: 400 });
-    if (!Number.isFinite(publicacoes) || publicacoes < 0 || publicacoes > 10_000) {
-      return NextResponse.json({ ok: false, error: "Número de publicações inválido." }, { status: 400 });
-    }
-    if (alcance !== null && (!Number.isFinite(alcance) || alcance < 0)) {
-      return NextResponse.json({ ok: false, error: "Alcance inválido." }, { status: 400 });
-    }
-    const { error } = await salesDb.from("social_metrics").upsert(
-      {
-        canal, dia,
-        publicacoes: Math.trunc(publicacoes),
-        alcance: alcance === null ? null : Math.trunc(alcance),
-        obs: obs ?? (texto || null),
-        autor,
-      },
-      { onConflict: "canal,dia" },
-    );
-    if (error) return NextResponse.json({ ok: false, error: "Não consegui salvar os números." }, { status: 500 });
-    return NextResponse.json({ ok: true, destino: "Relatório do mês" });
+    const r = await salvarNumeros({
+      canal: cleanText(b?.canal, 20) || "facebook_pagina",
+      dia: cleanText(b?.dia, 10),
+      publicacoes: b?.publicacoes,
+      alcance: b?.alcance,
+      obs: obs ?? (texto || null),
+      autor,
+      fotos: b?.fotos,
+    });
+    if (!r.ok) return NextResponse.json({ ok: false, error: r.erro }, { status: r.status });
+    return NextResponse.json({
+      ok: true,
+      destino: r.conferir
+        ? "Relatório do mês — print guardado, os números saem dele"
+        : r.fotos
+          ? "Relatório do mês, com o print anexado"
+          : "Relatório do mês",
+    });
   }
 
   const fotosEnviadas = Array.isArray(b?.fotos) ? (b.fotos as unknown[]) : [];

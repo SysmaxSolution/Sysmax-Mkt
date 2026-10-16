@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isAuthorizedViewer } from "@/lib/viewer-auth";
 import { salesDb } from "@/lib/supabase";
 import { cleanText } from "@/crm/lead-intake";
+import { salvarNumeros } from "@/lib/social-metrics";
 
 // ===========================================================================
 // Relatório MENSAL — ideia da captação (2026-10-15): acumular o que foi feito
@@ -15,8 +16,6 @@ import { cleanText } from "@/crm/lead-intake";
 // ===========================================================================
 
 export const runtime = "nodejs";
-
-const CANAIS = ["facebook_pagina", "facebook_grupos", "instagram", "outro"] as const;
 
 const LABEL: Record<string, string> = {
   email: "E-mails enviados",
@@ -56,7 +55,7 @@ export async function GET(req: NextRequest) {
   const [enviosRes, novasRes, socialRes, funilRes] = await Promise.all([
     salesDb.from("outbox").select("channel,approved_by").eq("status", "sent").gte("sent_at", j.de).lt("sent_at", j.ate),
     salesDb.from("leads").select("id,country").eq("source", "manual").gte("discovered_at", j.de).lt("discovered_at", j.ate),
-    salesDb.from("social_metrics").select("canal,publicacoes,alcance,dia").gte("dia", j.de.slice(0, 10)).lt("dia", j.ate.slice(0, 10)),
+    salesDb.from("social_metrics").select("canal,publicacoes,alcance,dia,fotos,conferir").gte("dia", j.de.slice(0, 10)).lt("dia", j.ate.slice(0, 10)).order("dia", { ascending: false }),
     salesDb.from("leads").select("stage").gte("qualified_at", j.de).lt("qualified_at", j.ate),
   ]);
 
@@ -73,13 +72,27 @@ export async function GET(req: NextRequest) {
   const porPais: Record<string, number> = {};
   for (const n of novas) porPais[n.country ?? "?"] = (porPais[n.country ?? "?"] ?? 0) + 1;
 
-  const social = (socialRes.data ?? []) as { canal: string; publicacoes: number; alcance: number | null }[];
+  type Social = { canal: string; publicacoes: number | null; alcance: number | null; dia: string; fotos: string[] | null; conferir: boolean | null };
+  const social = (socialRes.data ?? []) as Social[];
   const redes: Record<string, { publicacoes: number; alcance: number }> = {};
   for (const s of social) {
     const r = (redes[s.canal] ??= { publicacoes: 0, alcance: 0 });
-    r.publicacoes += s.publicacoes;
+    r.publicacoes += s.publicacoes ?? 0;
     r.alcance += s.alcance ?? 0;
   }
+
+  // Prints anexados: ficam à vista para conferir o número contra a fonte, e os
+  // dias ainda sem número aparecem marcados em vez de somar zero calado.
+  const prints = social
+    .filter((s) => (s.fotos ?? []).length)
+    .map((s) => ({
+      canal: CANAL_LABEL[s.canal] ?? s.canal,
+      dia: s.dia,
+      fotos: s.fotos ?? [],
+      conferir: !!s.conferir,
+      publicacoes: s.publicacoes,
+      alcance: s.alcance,
+    }));
 
   const responderam = (funilRes.data ?? []).length;
   const totalEnvios = envios.length;
@@ -97,6 +110,8 @@ export async function GET(req: NextRequest) {
       publicacoes: v.publicacoes,
       alcance: v.alcance,
     })),
+    prints,
+    aConferir: prints.filter((p) => p.conferir).length,
     responderam,
     // Taxa de resposta sobre o que saiu no mês. Comparar canais é o objetivo:
     // é esse número que diz onde o dinheiro rende mais.
@@ -108,38 +123,20 @@ export async function POST(req: NextRequest) {
   if (!isAuthorizedViewer(req)) return new NextResponse("unauthorized", { status: 401 });
 
   const b = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-  const canal = cleanText(b?.canal, 20);
-  const dia = cleanText(b?.dia, 10);
-  const publicacoes = Number(b?.publicacoes ?? 0);
-  const alcanceBruto = b?.alcance;
-  const alcance = alcanceBruto === "" || alcanceBruto === null || alcanceBruto === undefined ? null : Number(alcanceBruto);
-
-  if (!CANAIS.includes(canal as (typeof CANAIS)[number])) {
-    return NextResponse.json({ ok: false, error: "Escolha o canal." }, { status: 400 });
-  }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dia)) {
-    return NextResponse.json({ ok: false, error: "Informe o dia." }, { status: 400 });
-  }
-  if (!Number.isFinite(publicacoes) || publicacoes < 0 || publicacoes > 10_000) {
-    return NextResponse.json({ ok: false, error: "Número de publicações inválido." }, { status: 400 });
-  }
-  if (alcance !== null && (!Number.isFinite(alcance) || alcance < 0)) {
-    return NextResponse.json({ ok: false, error: "Alcance inválido." }, { status: 400 });
-  }
 
   // Um registro por canal/dia: relançar o mesmo dia corrige o número anterior
-  // em vez de somar duas vezes.
-  const { error } = await salesDb.from("social_metrics").upsert(
-    {
-      canal, dia,
-      publicacoes: Math.trunc(publicacoes),
-      alcance: alcance === null ? null : Math.trunc(alcance),
-      obs: cleanText(b?.obs, 500) || null,
-      autor: cleanText(b?.autor, 60) || "equipe",
-    },
-    { onConflict: "canal,dia" },
-  );
-  if (error) return NextResponse.json({ ok: false, error: "Não consegui salvar os números." }, { status: 500 });
+  // em vez de somar duas vezes — e mergeia, para quem manda só o print não
+  // apagar números que já estavam lá. Regras em @/lib/social-metrics.
+  const r = await salvarNumeros({
+    canal: cleanText(b?.canal, 20),
+    dia: cleanText(b?.dia, 10),
+    publicacoes: b?.publicacoes,
+    alcance: b?.alcance,
+    obs: cleanText(b?.obs, 500) || null,
+    autor: cleanText(b?.autor, 60) || "equipe",
+    fotos: b?.fotos,
+  });
+  if (!r.ok) return NextResponse.json({ ok: false, error: r.erro }, { status: r.status });
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, conferir: r.conferir });
 }
