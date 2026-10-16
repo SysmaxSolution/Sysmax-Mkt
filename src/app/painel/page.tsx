@@ -338,17 +338,21 @@ export default function PainelPage() {
     setNote("");
   }
 
-  async function sendMail(leadId: string, clinic: string) {
+  async function sendMail(leadId: string, clinic: string, teste = false) {
     if (!draft.subject.trim() || !draft.body.trim()) { setNote("Preencha o assunto e o texto antes de enviar."); return; }
     setSending(true);
     try {
       const res = await fetch("/api/painel/send-email", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-admin-token": token },
-        body: JSON.stringify({ leadId, subject: draft.subject, body: draft.body }),
+        body: JSON.stringify({ leadId, subject: draft.subject, body: draft.body, ...(teste ? { teste: true } : {}) }),
       });
       const d = await res.json();
       if (!d.ok) { setNote(d.error ?? "Não foi possível enviar."); if (d.quota) setQuota(d.quota); return; }
+      if (d.teste) {
+        setNote(`Teste enviado para ${d.to}. Confira na sua caixa como a mensagem chega — a clínica não recebeu nada.`);
+        return;
+      }
       setSentTo((m) => ({ ...m, [leadId]: d.to }));
       if (d.quota) setQuota(d.quota);
       setComposeFor(null);
@@ -719,10 +723,14 @@ export default function PainelPage() {
                       onChange={(e) => setDraft((d) => ({ ...d, body: e.target.value }))} />
                     <p className="chint">
                       Sai do e-mail da empresa para <b>{r.email}</b>. O link de descadastro entra sozinho no final, como a lei exige.
+                      Antes de disparar, use <b>Mandar teste para mim</b>: a mesma mensagem chega na sua caixa e a clínica não recebe nada.
                     </p>
                     <div className="crow">
                       <button className="csend" disabled={sending} onClick={() => sendMail(r.leadId, r.clinic)}>
                         {sending ? "Enviando..." : "Enviar agora"}
+                      </button>
+                      <button className="ccancel" disabled={sending} onClick={() => sendMail(r.leadId, r.clinic, true)}>
+                        Mandar teste para mim
                       </button>
                       <button className="ccancel" disabled={sending} onClick={() => setComposeFor(null)}>Cancelar</button>
                     </div>

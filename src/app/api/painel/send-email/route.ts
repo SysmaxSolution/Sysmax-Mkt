@@ -19,7 +19,7 @@ import { diaDeTrabalho } from "@/lib/agenda-br";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-type Body = { leadId?: string; subject?: string; body?: string; sender?: string };
+type Body = { leadId?: string; subject?: string; body?: string; sender?: string; teste?: boolean };
 
 export async function POST(req: NextRequest) {
   if (!isAuthorizedViewer(req)) return new NextResponse("unauthorized", { status: 401 });
@@ -42,6 +42,30 @@ export async function POST(req: NextRequest) {
 
   if (body.length > 20_000) {
     return NextResponse.json({ ok: false, error: "O texto ficou longo demais." }, { status: 400 });
+  }
+
+  // ENVIO DE TESTE: manda a mesma mensagem para o e-mail da equipe, nunca para
+  // a clinica. Pedido dela em 16/10 -- ela queria ver como a mensagem CHEGA
+  // (formatacao, tamanho, se ficou pesada) e nao tinha como, porque todo envio
+  // ia direto para o prospecto. Ninguem nunca tinha visto o e-mail frio do
+  // lado de quem recebe.
+  //
+  // Nao mexe no lead, nao gera registro em outbox e nao consome a cota do
+  // dominio: nao e prospeccao, e conferencia. O destino e fixo no ambiente,
+  // para o teste nunca virar porta de envio para endereco arbitrario.
+  if (p?.teste === true) {
+    const destino = (process.env.TEAM_TEST_EMAIL ?? "sysvetmax@gmail.com").trim();
+    try {
+      const r = await sendEmail({ to: destino, subject: `[TESTE] ${subject}`, text: body, leadId });
+      // leadId vai junto de proposito: assim o link de descadastro sai igual
+      // ao real e ela ve a mensagem exatamente como a clinica veria.
+      if (r.skipped) {
+        return NextResponse.json({ ok: false, error: "O e-mail de teste esta na lista de opt-out." }, { status: 422 });
+      }
+      return NextResponse.json({ ok: true, teste: true, to: destino });
+    } catch {
+      return NextResponse.json({ ok: false, error: "Nao consegui enviar o teste." }, { status: 502 });
+    }
   }
 
   const { data: lead, error: leadErr } = await salesDb
