@@ -7,6 +7,7 @@ import MeuDia from "./MeuDia";
 import ImportarLista from "./ImportarLista";
 import EnviarMaterial from "./EnviarMaterial";
 import RelatorioMensal from "./RelatorioMensal";
+import ReportarProblema from "./ReportarProblema";
 
 // ===========================================================================
 // /painel — Painel comercial ao vivo para a equipe. Lê a fila consolidada do
@@ -516,6 +517,10 @@ export default function PainelPage() {
           </div>
         )}
 
+
+        {/* Caminho de erro para quem não fala com a equipe por WhatsApp
+            (funcionários, diferente da Jéssica) — visível em qualquer aba. */}
+        <ReportarProblema token={token} pagina={view} />
 
         {view === "mes" ? <RelatorioMensal token={token} /> : view === "material" ? <EnviarMaterial token={token} /> : view === "videos" ? <VideosView token={token} /> : view === "importar" ? <ImportarLista token={token} onImportou={() => load(token)} /> : view === "novo" ? <NovoContato token={token} onQuota={setQuota} /> : view === "dia" ? <MeuDia token={token} /> : view === "site" ? <SiteLeadsView token={token} /> : view === "posts" ? <PostsView token={token} /> : (
         <>
@@ -1523,4 +1528,10 @@ const CSS = `
   .lnotes .body{width:100%;padding:8px 10px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;font-size:12.5px;color:var(--muted);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
   .lnotes.open .body{display:block;-webkit-line-clamp:unset;overflow:visible}
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+  .repbox{position:fixed;right:16px;bottom:16px;z-index:50;display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+  .repbtn{background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:8px 14px;font-size:12.5px;font-weight:650;box-shadow:var(--shadow);cursor:pointer}
+  .reppanel{width:280px;max-width:calc(100vw - 32px);background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:12px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:8px}
+  .repinput,.reptext{width:100%;border:1px solid var(--border);border-radius:9px;padding:8px 10px;font-size:13px;background:var(--surface-2);box-sizing:border-box}
+  .reptext{resize:vertical;font-family:inherit}
+  .nvok{color:#1a7f37}
 `;
