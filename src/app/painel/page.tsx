@@ -920,7 +920,6 @@ function PostsView({ token }: { token: string }) {
     setCopied(id); setTimeout(() => setCopied((c) => (c === id ? null : c)), 1400);
   }
   const legend = (c: PostContent) => [c.caption, (c.hashtags ?? []).join(" ")].filter(Boolean).join("\n\n");
-  const imgUrl = (id: string, size: string) => `/api/painel/post-image?id=${id}&size=${size}&t=${encodeURIComponent(token)}`;
   const fotoUrl = (f: string) => `/api/painel/material-foto?f=${encodeURIComponent(f)}&t=${encodeURIComponent(token)}`;
 
   if (st === "loading") return <p className="sub" style={{ marginTop: 24 }}>Carregando o conteúdo de hoje…</p>;
@@ -952,7 +951,7 @@ function PostsView({ token }: { token: string }) {
       <header className="top">
         <div className="eyebrow">Sysmax Software · Conteúdo</div>
         <h1>Posts do dia</h1>
-        <p className="sub">5 posts, 2 vídeos e 1 anúncio prontos para {d.date ?? "hoje"}. Baixe a arte/vídeo, copie a legenda e publique no Instagram, status do WhatsApp e Facebook.</p>
+        <p className="sub">5 posts, 2 vídeos e 1 anúncio prontos para {d.date ?? "hoje"}. Copie a legenda, baixe o vídeo quando tiver, e publique no Instagram, status do WhatsApp e Facebook. A arte você já está fazendo por fora.</p>
       </header>
 
       {briefBox}
@@ -961,32 +960,27 @@ function PostsView({ token }: { token: string }) {
       <div className="grid">
         {d.posts.map((p) => {
           const fotos = p.content.fotos ?? [];
-          const arte = imgUrl(p.id, p.format === "story" ? "story" : "feed");
           return (
           <article className="card pcard" key={p.id}>
             <div className="pill-row">
               <span className="rec rec-email">{p.format}</span>
               {!!fotos.length && <span className="rec rec-wa">foto sua</span>}
             </div>
-            {fotos.length ? (
+            {fotos.length > 0 && (
               <div className={`postfotos${fotos.length === 1 ? " one" : ""}`}>
                 {fotos.map((f, i) => <img key={f} src={fotoUrl(f)} alt={`foto ${i + 1} do post`} loading="lazy" />)}
               </div>
-            ) : (
-              <img className="post-art" src={arte} alt="arte do post" loading="lazy" />
             )}
             <div className="phead">{p.content.headline}</div>
             <pre className="body">{p.content.caption}</pre>
             {!!(p.content.hashtags ?? []).length && <div className="tags">{(p.content.hashtags ?? []).join(" ")}</div>}
             <div className="pactions">
               <button className={`copy${copied === p.id ? " done" : ""}`} onClick={() => copy(p.id, legend(p.content))}>{copied === p.id ? "Copiado ✓" : "Copiar legenda"}</button>
-              {fotos.length
-                ? fotos.map((f, i) => (
-                    <a className="dl" key={f} href={fotoUrl(f)} download={`foto-${i + 1}-${p.id}.jpg`} target="_blank" rel="noopener noreferrer">
-                      {fotos.length === 1 ? "Baixar foto" : `Baixar foto ${i + 1}`}
-                    </a>
-                  ))
-                : <a className="dl" href={arte} download={`post-${p.id}.png`} target="_blank" rel="noopener noreferrer">Baixar arte</a>}
+              {fotos.map((f, i) => (
+                <a className="dl" key={f} href={fotoUrl(f)} download={`foto-${i + 1}-${p.id}.jpg`} target="_blank" rel="noopener noreferrer">
+                  {fotos.length === 1 ? "Baixar foto" : `Baixar foto ${i + 1}`}
+                </a>
+              ))}
             </div>
           </article>
         );
@@ -1021,7 +1015,6 @@ function PostsView({ token }: { token: string }) {
           <div className="grid">
             <article className="card pcard" key={d.ad.id}>
               <div className="pill-row"><span className="rec rec-call">Anúncio</span></div>
-              <img className="post-art" src={imgUrl(d.ad.id, "feed")} alt="arte do anúncio" loading="lazy" />
               <div className="phead">{d.ad.content.headline}</div>
               <pre className="body">{d.ad.content.caption}</pre>
               <div className="roteiro">
@@ -1030,7 +1023,6 @@ function PostsView({ token }: { token: string }) {
               </div>
               <div className="pactions">
                 <button className={`copy${copied === d.ad.id ? " done" : ""}`} onClick={() => copy(d.ad!.id, legend(d.ad!.content))}>{copied === d.ad.id ? "Copiado ✓" : "Copiar texto"}</button>
-                <a className="dl" href={imgUrl(d.ad.id, "feed")} download={`anuncio-${d.ad.id}.png`} target="_blank" rel="noopener noreferrer">Baixar arte</a>
               </div>
             </article>
           </div>
