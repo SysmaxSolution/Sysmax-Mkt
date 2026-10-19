@@ -15,7 +15,7 @@ export const runtime = "nodejs";
 // wa_call = ligacao PELO WhatsApp. Separado do "whatsapp" escrito a pedido
 // da captacao: sao caminhos com taxa de resposta diferente e ela quer medir
 // cada um sem misturar.
-const CANAIS = ["whatsapp", "wa_call", "call", "ig_dm"] as const;
+const CANAIS = ["whatsapp", "wa_call", "call", "ig_dm", "fb_dm", "tiktok_dm"] as const;
 type Canal = (typeof CANAIS)[number];
 
 export async function POST(req: NextRequest) {

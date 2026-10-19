@@ -41,7 +41,16 @@ const CONTATO_LABEL: Record<string, string> = {
   whatsapp: "WhatsApp escrito",
   wa_call: "WhatsApp ligação",
   call: "Ligação comum",
+  fb_dm: "Facebook",
+  ig_dm: "Instagram",
+  tiktok_dm: "TikTok",
 };
+
+// Pedido da captação em 18/10: clínicas achadas nas redes sociais ela nunca
+// aborda DIRETO pela rede (risco de SPAM/bloqueio) — ela sempre entra por
+// WhatsApp e só marca aqui em qual(is) rede(s) encontrou a clínica, pra saber
+// que já estamos "sendo vistos" nos 3 canais antes de falar com o dono.
+const REDE_SOCIAL = ["fb_dm", "ig_dm", "tiktok_dm"] as const;
 
 const REC: Record<string, { label: string; key: string }> = {
   email: { label: "E-mail", key: "email" },
@@ -675,6 +684,22 @@ export default function PainelPage() {
                 )}
 
                 <div className="regrow">
+                  <span className="reglbl">Rede social:</span>
+                  {REDE_SOCIAL.map((c) => {
+                    const marcado = (r.contatos ?? []).includes(c);
+                    return (
+                      <button key={c} className={`regbtn reg-${c}${marcado ? " on" : ""}`}
+                        disabled={registrando === `${r.leadId}:${c}`}
+                        aria-pressed={marcado}
+                        title={marcado ? "Clique para desmarcar" : "Marcar: achei a clínica aqui"}
+                        onClick={() => alternarContato(r.leadId, c, r.clinic, marcado)}>
+                        {registrando === `${r.leadId}:${c}` ? "…" : CONTATO_LABEL[c]}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="regrow">
                   <span className="reglbl">Anotação:</span>
                   <button className={`regbtn reg-nota${r.nota ? " on" : ""}`}
                     aria-pressed={!!r.nota}
@@ -1256,8 +1281,8 @@ const CSS = `
   :root{
     --bg:#F5F7F6; --surface:#FFFFFF; --surface-2:#F0F3F1; --ink:#141F1B; --muted:#5A6A63;
     --border:#E1E7E3; --accent:#0E7C66; --accent-ink:#0A5A4A;
-    --email:#4F46E5; --ig:#D6336C; --wa:#12925A; --call:#B45309;
-    --email-bg:#EEF0FE; --ig-bg:#FDECF3; --wa-bg:#E6F5EC; --call-bg:#FBF0E1;
+    --email:#4F46E5; --ig:#D6336C; --wa:#12925A; --call:#B45309; --fb:#1D4ED8; --tiktok:#0F172A;
+    --email-bg:#EEF0FE; --ig-bg:#FDECF3; --wa-bg:#E6F5EC; --call-bg:#FBF0E1; --fb-bg:#E8EEFC; --tiktok-bg:#EAECEF;
     /* Padrão Keep da captação: branco/cinza=aguardando, azul=recepção,
        verde=dono, vermelho=sem interesse. Cliente usa o teal da marca. */
     --st-new:#64748B; --st-engaged:#64748B; --st-qualified:#2563EB; --st-demo:#12925A; --st-won:#0E7C66; --st-lost:#B91C1C;
@@ -1266,8 +1291,8 @@ const CSS = `
   @media (prefers-color-scheme:dark){:root{
     --bg:#0D1512; --surface:#151F1B; --surface-2:#1B2723; --ink:#E7EFEB; --muted:#93A69D;
     --border:#27332E; --accent:#2DD4BF; --accent-ink:#5EEAD4;
-    --email:#8B93FF; --ig:#F472A6; --wa:#4FCB86; --call:#E0A45C;
-    --email-bg:#1D2140; --ig-bg:#33202B; --wa-bg:#172B22; --call-bg:#2E2416;
+    --email:#8B93FF; --ig:#F472A6; --wa:#4FCB86; --call:#E0A45C; --fb:#7CA0FF; --tiktok:#E7EFEB;
+    --email-bg:#1D2140; --ig-bg:#33202B; --wa-bg:#172B22; --call-bg:#2E2416; --fb-bg:#1B2440; --tiktok-bg:#20262B;
     --st-new:#94A3B8; --st-engaged:#94A3B8; --st-qualified:#7CA0FF; --st-demo:#4FCB86; --st-won:#2DD4BF; --st-lost:#F16A6A;
     --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 18px rgba(0,0,0,.35);
   }}
@@ -1315,9 +1340,15 @@ const CSS = `
   .reg-whatsapp{border-color:color-mix(in srgb,var(--wa) 45%,var(--border));color:var(--wa)}
   .reg-wa_call{border-color:var(--wa);color:var(--wa);background:var(--wa-bg)}
   .reg-call{border-color:color-mix(in srgb,var(--call) 45%,var(--border));color:var(--call)}
+  .reg-fb_dm{border-color:color-mix(in srgb,var(--fb) 45%,var(--border));color:var(--fb)}
+  .reg-ig_dm{border-color:color-mix(in srgb,var(--ig) 45%,var(--border));color:var(--ig)}
+  .reg-tiktok_dm{border-color:color-mix(in srgb,var(--tiktok) 45%,var(--border));color:var(--tiktok)}
   .regbtn.on{color:#fff}
   .regbtn.reg-whatsapp.on,.regbtn.reg-wa_call.on{background:var(--wa);border-color:var(--wa)}
   .regbtn.reg-call.on{background:var(--call);border-color:var(--call)}
+  .regbtn.reg-fb_dm.on{background:var(--fb);border-color:var(--fb);color:#fff}
+  .regbtn.reg-ig_dm.on{background:var(--ig);border-color:var(--ig);color:#fff}
+  .regbtn.reg-tiktok_dm.on{background:var(--tiktok);border-color:var(--tiktok);color:#fff}
   .reg-retorno{border-color:color-mix(in srgb,var(--email) 45%,var(--border));color:var(--email)}
   .reg-reuniao{border-color:color-mix(in srgb,var(--ig) 45%,var(--border));color:var(--ig)}
   .regbtn.reg-retorno.on{background:var(--email);border-color:var(--email)}
