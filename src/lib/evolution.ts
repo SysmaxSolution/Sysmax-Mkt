@@ -9,12 +9,15 @@ type Creds = { apiUrl: string; instanceId: string; apiKey: string };
 // to a ByteString" — 40 envios da leva de 28/07 falharam assim. Sanitizar sempre.
 const cleanEnv = (v: string | undefined) => v?.replace(/^﻿/, "").trim() || undefined;
 
-function creds(): Creds {
+// instanceId opcional: cada analista (WhatsApp multi-instância no painel) usa
+// a propria instancia Evolution; sem o parametro, mantem o comportamento
+// antigo (instancia fixa COMERCIAL usada pelo bot/outbox).
+function creds(instanceId?: string): Creds {
   const apiUrl = cleanEnv(process.env.EVOLUTION_API_URL);
   const apiKey = cleanEnv(process.env.EVOLUTION_API_KEY);
-  const instanceId = cleanEnv(process.env.EVOLUTION_COMMERCIAL_INSTANCE) ?? "sysmax-comercial";
+  const resolvedInstance = cleanEnv(instanceId) ?? cleanEnv(process.env.EVOLUTION_COMMERCIAL_INSTANCE) ?? "sysmax-comercial";
   if (!apiUrl || !apiKey) throw new Error("EVOLUTION_API_URL/KEY ausentes no ambiente.");
-  return { apiUrl, apiKey, instanceId };
+  return { apiUrl, apiKey, instanceId: resolvedInstance };
 }
 
 function headers(apiKey: string): Record<string, string> {
@@ -47,9 +50,9 @@ function normalizeWhatsAppMarkdown(text: string): string {
     .replace(/~~([^~\n]+?)~~/g, "~$1~");
 }
 
-export async function sendText(phone: string, message: string): Promise<void> {
+export async function sendText(phone: string, message: string, instanceId?: string): Promise<void> {
   await throttle();
-  const c = creds();
+  const c = creds(instanceId);
   const url = `${c.apiUrl}/message/sendText/${c.instanceId}`;
   const body = JSON.stringify({ number: formatPhone(phone), text: normalizeWhatsAppMarkdown(message) });
   const res = await fetch(url, { method: "POST", headers: headers(c.apiKey), body });
@@ -124,5 +127,63 @@ export async function fetchContactByLid(lidJid: string): Promise<string | null> 
     return null;
   } catch {
     return null;
+  }
+}
+
+// ===========================================================================
+// Gerenciamento de instancia — WhatsApp multi-conta no painel (um analista =
+// uma instancia Evolution, pareada por QR code). Nao usa a instancia COMERCIAL
+// fixa: sempre recebe o instanceId explicito do wa_accounts.
+// ===========================================================================
+
+// Cria a instancia na Evolution (idempotente o suficiente: se ja existir, a
+// API retorna erro que tratamos como "ja existe, segue o fluxo de QR").
+export async function createInstance(instanceId: string, webhookUrl: string): Promise<void> {
+  const c = creds(instanceId);
+  const res = await fetch(`${c.apiUrl}/instance/create`, {
+    method: "POST",
+    headers: headers(c.apiKey),
+    body: JSON.stringify({
+      instanceName: c.instanceId,
+      qrcode: true,
+      integration: "WHATSAPP-BAILEYS",
+      webhook: { url: webhookUrl, byEvents: false, base64: false, events: ["MESSAGES_UPSERT", "CONNECTION_UPDATE"] },
+    }),
+  });
+  if (!res.ok && res.status !== 403) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`Evolution instance/create ${res.status}: ${t}`);
+  }
+}
+
+// Retorna o QR code (base64 "data:image/png;base64,...") para o analista
+// escanear, ou null se a instancia ja estiver conectada/sem QR pendente.
+export async function getInstanceQr(instanceId: string): Promise<string | null> {
+  const c = creds(instanceId);
+  const res = await fetch(`${c.apiUrl}/instance/connect/${c.instanceId}`, {
+    method: "GET",
+    headers: headers(c.apiKey),
+  });
+  if (!res.ok) return null;
+  const data = await res.json().catch(() => null);
+  const base64 = data?.base64 ?? data?.qrcode?.base64 ?? null;
+  return typeof base64 === "string" ? base64 : null;
+}
+
+// Estado de conexao atual direto na Evolution (fonte de verdade; wa_accounts.status
+// e so um cache atualizado pelo webhook CONNECTION_UPDATE).
+export async function getInstanceState(instanceId: string): Promise<"open" | "connecting" | "close" | "unknown"> {
+  const c = creds(instanceId);
+  try {
+    const res = await fetch(`${c.apiUrl}/instance/connectionState/${c.instanceId}`, {
+      method: "GET",
+      headers: headers(c.apiKey),
+    });
+    if (!res.ok) return "unknown";
+    const data = await res.json().catch(() => null);
+    const state = data?.instance?.state ?? data?.state;
+    return state === "open" || state === "connecting" || state === "close" ? state : "unknown";
+  } catch {
+    return "unknown";
   }
 }

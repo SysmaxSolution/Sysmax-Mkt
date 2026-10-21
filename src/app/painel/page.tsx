@@ -8,6 +8,7 @@ import ImportarLista from "./ImportarLista";
 import EnviarMaterial from "./EnviarMaterial";
 import RelatorioMensal from "./RelatorioMensal";
 import ReportarProblema from "./ReportarProblema";
+import WhatsAppView from "./WhatsAppView";
 
 // ===========================================================================
 // /painel — Painel comercial ao vivo para a equipe. Lê a fila consolidada do
@@ -162,7 +163,7 @@ export default function PainelPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [filter, setFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [view, setView] = useState<"leads" | "novo" | "importar" | "material" | "dia" | "mes" | "posts" | "site" | "videos">("leads");
+  const [view, setView] = useState<"leads" | "novo" | "importar" | "material" | "dia" | "mes" | "posts" | "site" | "videos" | "whatsapp">("leads");
   const [q, setQ] = useState("");
   const [state, setState] = useState<"idle" | "loading" | "authed" | "error">("idle");
   const [note, setNote] = useState("");
@@ -491,6 +492,7 @@ export default function PainelPage() {
           <button className={view === "mes" ? "on" : ""} onClick={() => setView("mes")}>Relatório do mês</button>
           <button className={view === "posts" ? "on" : ""} onClick={() => setView("posts")}>Posts do dia</button>
           <button className={view === "site" ? "on" : ""} onClick={() => setView("site")}>Leads do site</button>
+          <button className={view === "whatsapp" ? "on" : ""} onClick={() => setView("whatsapp")}>WhatsApp</button>
           {/* Fora do grupo de abas: nao e um lugar, e uma ferramenta. Ela
               procurou o teste dentro de "Contato novo" e dentro do filtro de
               exterior (16/10) -- entao ele tem que estar a mao em qualquer
@@ -531,7 +533,7 @@ export default function PainelPage() {
             (funcionários, diferente da Jéssica) — visível em qualquer aba. */}
         <ReportarProblema token={token} pagina={view} />
 
-        {view === "mes" ? <RelatorioMensal token={token} /> : view === "material" ? <EnviarMaterial token={token} /> : view === "videos" ? <VideosView token={token} /> : view === "importar" ? <ImportarLista token={token} onImportou={() => load(token)} /> : view === "novo" ? <NovoContato token={token} onQuota={setQuota} /> : view === "dia" ? <MeuDia token={token} /> : view === "site" ? <SiteLeadsView token={token} /> : view === "posts" ? <PostsView token={token} /> : (
+        {view === "mes" ? <RelatorioMensal token={token} /> : view === "material" ? <EnviarMaterial token={token} /> : view === "videos" ? <VideosView token={token} /> : view === "importar" ? <ImportarLista token={token} onImportou={() => load(token)} /> : view === "novo" ? <NovoContato token={token} onQuota={setQuota} /> : view === "dia" ? <MeuDia token={token} /> : view === "site" ? <SiteLeadsView token={token} /> : view === "posts" ? <PostsView token={token} /> : view === "whatsapp" ? <WhatsAppView token={token} /> : (
         <>
         <header className="top">
           <div className="eyebrow">Sysmax Software · Esteira Comercial</div>
