@@ -9,6 +9,7 @@ import EnviarMaterial from "./EnviarMaterial";
 import RelatorioMensal from "./RelatorioMensal";
 import ReportarProblema from "./ReportarProblema";
 import WhatsAppView from "./WhatsAppView";
+import KanbanView from "./KanbanView";
 
 // ===========================================================================
 // /painel — Painel comercial ao vivo para a equipe. Lê a fila consolidada do
@@ -163,7 +164,7 @@ export default function PainelPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [filter, setFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [view, setView] = useState<"leads" | "novo" | "importar" | "material" | "dia" | "mes" | "posts" | "site" | "videos" | "whatsapp">("leads");
+  const [view, setView] = useState<"leads" | "novo" | "importar" | "material" | "dia" | "mes" | "posts" | "site" | "videos" | "whatsapp" | "kanban">("leads");
   const [q, setQ] = useState("");
   const [state, setState] = useState<"idle" | "loading" | "authed" | "error">("idle");
   const [note, setNote] = useState("");
@@ -493,6 +494,7 @@ export default function PainelPage() {
           <button className={view === "posts" ? "on" : ""} onClick={() => setView("posts")}>Posts do dia</button>
           <button className={view === "site" ? "on" : ""} onClick={() => setView("site")}>Leads do site</button>
           <button className={view === "whatsapp" ? "on" : ""} onClick={() => setView("whatsapp")}>WhatsApp</button>
+          <button className={view === "kanban" ? "on" : ""} onClick={() => setView("kanban")}>Kanban</button>
           {/* Fora do grupo de abas: nao e um lugar, e uma ferramenta. Ela
               procurou o teste dentro de "Contato novo" e dentro do filtro de
               exterior (16/10) -- entao ele tem que estar a mao em qualquer
@@ -533,7 +535,7 @@ export default function PainelPage() {
             (funcionários, diferente da Jéssica) — visível em qualquer aba. */}
         <ReportarProblema token={token} pagina={view} />
 
-        {view === "mes" ? <RelatorioMensal token={token} /> : view === "material" ? <EnviarMaterial token={token} /> : view === "videos" ? <VideosView token={token} /> : view === "importar" ? <ImportarLista token={token} onImportou={() => load(token)} /> : view === "novo" ? <NovoContato token={token} onQuota={setQuota} /> : view === "dia" ? <MeuDia token={token} /> : view === "site" ? <SiteLeadsView token={token} /> : view === "posts" ? <PostsView token={token} /> : view === "whatsapp" ? <WhatsAppView token={token} /> : (
+        {view === "mes" ? <RelatorioMensal token={token} /> : view === "material" ? <EnviarMaterial token={token} /> : view === "videos" ? <VideosView token={token} /> : view === "importar" ? <ImportarLista token={token} onImportou={() => load(token)} /> : view === "novo" ? <NovoContato token={token} onQuota={setQuota} /> : view === "dia" ? <MeuDia token={token} /> : view === "site" ? <SiteLeadsView token={token} /> : view === "posts" ? <PostsView token={token} /> : view === "whatsapp" ? <WhatsAppView token={token} /> : view === "kanban" ? <KanbanView token={token} /> : (
         <>
         <header className="top">
           <div className="eyebrow">Sysmax Software · Esteira Comercial</div>
@@ -1272,6 +1274,24 @@ function SiteLeadsView({ token }: { token: string }) {
 }
 
 const CSS = `
+  .kanban-colunas{display:flex;gap:12px;overflow-x:auto;padding-bottom:12px}
+  .kanban-coluna{flex:0 0 240px;background:var(--surface-2);border-radius:10px;padding:10px}
+  .kanban-coluna h4{margin:0 0 8px;font-size:13px;color:var(--muted)}
+  .kanban-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:8px;font-size:12.5px}
+  .kanban-meta{color:var(--muted);font-size:11px;margin:2px 0}
+  .kanban-score{display:inline-block;border:1px solid;border-radius:999px;padding:1px 7px;font-size:10.5px;font-weight:700}
+  .kanban-mover{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+  .kanban-mover button{font-size:10px;padding:2px 6px;border-radius:6px;border:1px solid var(--border);background:var(--surface-2);cursor:pointer}
+  .kanban-filtros{margin-bottom:12px}
+  .whatsapp-view{display:flex;gap:16px;flex-wrap:wrap}
+  .wa-pareamento,.wa-conversas{flex:0 0 260px}
+  .wa-chat{flex:1;min-width:280px}
+  .wa-lista{list-style:none;padding:0;margin:0}
+  .wa-lista li{padding:8px;border-radius:8px;cursor:pointer;margin-bottom:4px;background:var(--surface-2)}
+  .wa-lista li.on{background:var(--email-bg)}
+  .wa-mensagens{max-height:360px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin:8px 0}
+  .wa-in{align-self:flex-start;background:var(--surface-2);border-radius:8px;padding:6px 10px;max-width:80%}
+  .wa-out{align-self:flex-end;background:var(--wa-bg);border-radius:8px;padding:6px 10px;max-width:80%}
   :root{
     --bg:#F5F7F6; --surface:#FFFFFF; --surface-2:#F0F3F1; --ink:#141F1B; --muted:#5A6A63;
     --border:#E1E7E3; --accent:#0E7C66; --accent-ink:#0A5A4A;

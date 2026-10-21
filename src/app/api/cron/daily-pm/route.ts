@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isAuthorizedCron } from "@/lib/cron-auth";
 import { GET as outboxSend } from "@/app/api/cron/outbox-send/route";
 import { GET as metricsRollup } from "@/app/api/cron/metrics-rollup/route";
+import { GET as leadScore } from "@/app/api/cron/lead-score/route";
 
 // ===========================================================================
 // Orquestrador da TARDE (1 cron/dia — compatível com o plano Hobby do Vercel).
@@ -17,6 +18,7 @@ export async function GET(req: NextRequest) {
 
   const sent = await outboxSend(req).then((r) => r.json()).catch((e) => ({ ok: false, error: String(e) }));
   const metrics = await metricsRollup(req).then((r) => r.json()).catch((e) => ({ ok: false, error: String(e) }));
+  const score = await leadScore(req).then((r) => r.json()).catch((e) => ({ ok: false, error: String(e) }));
 
-  return NextResponse.json({ ok: true, stage: "daily-pm", sent, metrics });
+  return NextResponse.json({ ok: true, stage: "daily-pm", sent, metrics, score });
 }

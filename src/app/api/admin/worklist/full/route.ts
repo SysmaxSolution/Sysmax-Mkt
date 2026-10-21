@@ -23,6 +23,7 @@ type Lead = {
   enrichment_status: string | null; stage: string | null;
   retorno_em?: string | null; reuniao_em?: string | null; notes?: string | null; wa_valido?: boolean | null;
   responsavel?: string | null; crmv?: string | null; cnpj?: string | null; current_software?: string | null;
+  vertical?: string | null; lead_score?: number | null;
 };
 type Ob = { id: string; lead_id: string; channel: string; subject: string | null; body: string; status: string };
 
@@ -32,7 +33,7 @@ export async function GET(req: NextRequest) {
   // source manual = clínica cadastrada à mão pela equipe no painel; sem isso
   // os contatos que ela mesma encontra não apareceriam na fila.
   const [{ data: leads, error: le }, { data: outbox, error: oe }] = await Promise.all([
-    salesDb.from("leads").select("id,name,company_name,city,uf,country,phone,email,instagram_handle,website,enrichment_status,stage,opted_out,retorno_em,reuniao_em,notes,wa_valido,responsavel,crmv,cnpj,current_software").in("source", ["places", "manual"]),
+    salesDb.from("leads").select("id,name,company_name,city,uf,country,phone,email,instagram_handle,website,enrichment_status,stage,opted_out,retorno_em,reuniao_em,notes,wa_valido,responsavel,crmv,cnpj,current_software,vertical,lead_score").in("source", ["places", "manual"]),
     salesDb.from("outbox").select("id,lead_id,channel,subject,body,status").in("status", ["draft", "approved"]).order("created_at", { ascending: false }).limit(2000),
   ]);
   if (le || oe) return NextResponse.json({ ok: false, error: (le ?? oe)?.message }, { status: 500 });
@@ -111,6 +112,8 @@ export async function GET(req: NextRequest) {
       crmv: l.crmv ?? null,
       cnpj: l.cnpj ?? null,
       sistema: l.current_software ?? null,
+      vertical: l.vertical ?? "veterinario",
+      leadScore: l.lead_score ?? 0,
     });
   }
 
@@ -151,6 +154,8 @@ export async function GET(req: NextRequest) {
       crmv: raw.crmv ?? null,
       cnpj: raw.cnpj ?? null,
       sistema: raw.current_software ?? null,
+      vertical: raw.vertical ?? "veterinario",
+      leadScore: raw.lead_score ?? 0,
     });
   }
 
